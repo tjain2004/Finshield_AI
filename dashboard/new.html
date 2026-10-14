@@ -1,0 +1,705 @@
+<!--
+  FinShield AI — new.html
+  Not a standalone page: new.py reads the three marked sections below and
+  injects them into the dashboard page app.py serves (app.py, templates/
+  dashboard.html and static/dashboard.js are never modified).
+    NEW:STYLE  -> spliced in before </head>
+    NEW:NAV    -> two sidebar items, right after "Overview"
+    NEW:PAGES  -> the two pages, at the top of the main content area
+  Keep the marker comments exactly as they are — without them new.py
+  injects nothing and the tabs disappear (it prints a warning at start-up).
+
+  User Portal            -> Screen a transaction · Link Security
+  Investigation Workbench -> alert queue + live counts · case detail ·
+                             why flagged (SHAP) · linked accounts ·
+                             account history · SAR report · simulator
+-->
+
+<!-- NEW:STYLE -->
+<style>
+/* ── USER PORTAL — split-window screening console ───────────────── */
+.portal-split{display:grid;grid-template-columns:minmax(360px,var(--portal-left,46%)) 10px minmax(380px,1fr);align-items:start;gap:0}
+.portal-pane{min-width:0}
+.portal-right{position:sticky;top:0}
+.portal-splitter{align-self:stretch;cursor:col-resize;display:flex;justify-content:center;min-height:420px}
+.portal-splitter::before{content:'';width:2px;border-radius:2px;background:var(--border);transition:background .15s}
+.portal-splitter:hover::before,.portal-splitter.drag::before{background:var(--accent)}
+@media (max-width:1100px){
+  .portal-split{grid-template-columns:1fr}
+  .portal-splitter{display:none}
+  .portal-right{position:static}
+}
+.portal-section{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin:16px 0 9px}
+.portal-section:first-of-type{margin-top:4px}
+.preset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.preset{background:var(--bg4);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;cursor:pointer;text-align:left;
+  color:var(--text2);font-family:var(--sans);transition:border-color .15s,background .15s}
+.preset:hover{border-color:var(--accent)}
+.preset.active{border-color:var(--accent);background:var(--accent-dim)}
+.preset-name{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--text)}
+.preset-desc{font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.4}
+.tone-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--text3)}
+.tone-dot.good{background:var(--good)} .tone-dot.bad{background:var(--critical)}
+.portal-form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.portal-form .field{margin-bottom:0}
+.portal-form .span2{grid-column:1/-1}
+.field-hint{font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4}
+.amount-input{position:relative}
+.amount-input input{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.portal-actions{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.portal-actions .btn{flex:1;min-width:180px;padding:11px 18px;font-size:13px}
+.live-toggle{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text2);cursor:pointer;user-select:none}
+.live-toggle input{width:auto}
+
+.verdict-empty{text-align:center;padding:46px 20px;color:var(--text3);font-size:12px;line-height:1.7}
+.verdict-empty svg{width:42px;height:42px;margin:0 auto 12px;opacity:.5;display:block}
+.decision{display:flex;align-items:center;gap:14px;border-radius:11px;padding:14px 16px;border:1px solid var(--border2);background:var(--bg4);margin-bottom:14px}
+.decision-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--bg3)}
+.decision-icon svg{width:22px;height:22px}
+.decision-word{font-size:21px;font-weight:800;letter-spacing:.04em;font-family:var(--mono)}
+.decision-action{font-size:12px;color:var(--text2);margin-top:2px;line-height:1.5}
+.decision.LOW{border-color:var(--good);background:var(--good-dim)}      .decision.LOW .decision-word,.decision.LOW svg{color:var(--good)}
+.decision.MEDIUM{border-color:var(--warn);background:var(--warn-dim)}   .decision.MEDIUM .decision-word,.decision.MEDIUM svg{color:var(--warn)}
+.decision.HIGH{border-color:var(--serious);background:var(--serious-dim)} .decision.HIGH .decision-word,.decision.HIGH svg{color:var(--serious)}
+.decision.CRITICAL{border-color:var(--critical);background:var(--critical-dim)} .decision.CRITICAL .decision-word,.decision.CRITICAL svg{color:var(--critical)}
+
+.risk-hero{display:flex;align-items:flex-end;gap:14px;margin-bottom:10px}
+.risk-hero-num{font-size:38px;font-weight:800;color:#fff;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.risk-hero-meta{font-size:11px;color:var(--text2);line-height:1.5;padding-bottom:3px}
+.tier-meter{display:grid;grid-template-columns:3fr 2fr 2fr 1.4fr;gap:2px;margin-top:4px;position:relative}
+.tier-seg{height:10px;border-radius:2px;opacity:.35}
+.tier-seg:first-child{border-radius:4px 2px 2px 4px} .tier-seg:last-child{border-radius:2px 4px 4px 2px}
+.tier-seg.on{opacity:1}
+.tier-seg.LOW{background:var(--good)} .tier-seg.MEDIUM{background:var(--warn)}
+.tier-seg.HIGH{background:var(--serious)} .tier-seg.CRITICAL{background:var(--critical)}
+.tier-needle{position:absolute;top:-4px;width:3px;height:18px;border-radius:2px;background:#fff;box-shadow:0 0 0 2px var(--bg3);transform:translateX(-50%);transition:left .35s ease}
+.tier-labels{display:grid;grid-template-columns:3fr 2fr 2fr 1.4fr;gap:2px;margin-top:6px;font-size:9.5px;color:var(--text3);font-family:var(--mono)}
+.tier-labels span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tier-labels b{color:var(--text2);font-weight:600}
+.scale-note{font-size:10px;color:var(--text3);margin-top:6px}
+
+.why-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(120px,1fr) 46px;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--border);border-radius:6px}
+.why-row:last-child{border-bottom:none}
+.why-row:hover{background:var(--bg4)}
+.why-title{font-size:12px;font-weight:600;color:var(--text)}
+.why-detail{font-size:10.5px;color:var(--text2);margin-top:2px;line-height:1.45}
+.why-bar{position:relative;height:14px}
+.why-bar::before{content:'';position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--border2)}
+.why-fill{position:absolute;top:2px;height:10px;border-radius:4px}
+.why-fill.risk{left:50%;background:var(--s8);border-radius:0 4px 4px 0}
+.why-fill.safe{right:50%;background:var(--s1);border-radius:4px 0 0 4px}
+.why-val{font-family:var(--mono);font-size:11px;color:var(--text2);text-align:right;font-variant-numeric:tabular-nums}
+.why-legend{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin:2px 0 6px;padding:0 52px 0 0}
+.why-legend span{display:inline-flex;align-items:center;gap:6px}
+.why-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+.derived-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media (max-width:1300px){.derived-grid{grid-template-columns:repeat(2,1fr)}}
+.derived{background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px 10px}
+.derived .k{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.derived .v{font-size:13px;font-weight:700;color:var(--text);margin-top:3px;display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.derived.alert{border-color:var(--warn)}
+.derived.alert .v::before{content:'▲';font-size:9px;color:var(--warn)}
+.portal-busy{opacity:.55;transition:opacity .15s}
+
+* ── USER PORTAL — split-window screening console ───────────────── */
+.portal-split{display:grid;grid-template-columns:minmax(360px,var(--portal-left,46%)) 10px minmax(380px,1fr);align-items:start;gap:0}
+.portal-pane{min-width:0}
+.portal-right{position:sticky;top:0}
+.portal-splitter{align-self:stretch;cursor:col-resize;display:flex;justify-content:center;min-height:420px}
+.portal-splitter::before{content:'';width:2px;border-radius:2px;background:var(--border);transition:background .15s}
+.portal-splitter:hover::before,.portal-splitter.drag::before{background:var(--accent)}
+@media (max-width:1100px){
+  .portal-split{grid-template-columns:1fr}
+  .portal-splitter{display:none}
+  .portal-right{position:static}
+}
+.portal-section{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin:16px 0 9px}
+.portal-section:first-of-type{margin-top:4px}
+.preset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.preset{background:var(--bg4);border:1px solid var(--border2);border-radius:9px;padding:9px 11px;cursor:pointer;text-align:left;
+  color:var(--text2);font-family:var(--sans);transition:border-color .15s,background .15s}
+.preset:hover{border-color:var(--accent)}
+.preset.active{border-color:var(--accent);background:var(--accent-dim)}
+.preset-name{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--text)}
+.preset-desc{font-size:10.5px;color:var(--text3);margin-top:3px;line-height:1.4}
+.tone-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--text3)}
+.tone-dot.good{background:var(--good)} .tone-dot.bad{background:var(--critical)}
+.portal-form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.portal-form .field{margin-bottom:0}
+.portal-form .span2{grid-column:1/-1}
+.field-hint{font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4}
+.amount-input{position:relative}
+.amount-input input{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.portal-actions{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.portal-actions .btn{flex:1;min-width:180px;padding:11px 18px;font-size:13px}
+.live-toggle{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--text2);cursor:pointer;user-select:none}
+.live-toggle input{width:auto}
+
+.verdict-empty{text-align:center;padding:46px 20px;color:var(--text3);font-size:12px;line-height:1.7}
+.verdict-empty svg{width:42px;height:42px;margin:0 auto 12px;opacity:.5;display:block}
+.decision{display:flex;align-items:center;gap:14px;border-radius:11px;padding:14px 16px;border:1px solid var(--border2);background:var(--bg4);margin-bottom:14px}
+.decision-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--bg3)}
+.decision-icon svg{width:22px;height:22px}
+.decision-word{font-size:21px;font-weight:800;letter-spacing:.04em;font-family:var(--mono)}
+.decision-action{font-size:12px;color:var(--text2);margin-top:2px;line-height:1.5}
+.decision.LOW{border-color:var(--good);background:var(--good-dim)}      .decision.LOW .decision-word,.decision.LOW svg{color:var(--good)}
+.decision.MEDIUM{border-color:var(--warn);background:var(--warn-dim)}   .decision.MEDIUM .decision-word,.decision.MEDIUM svg{color:var(--warn)}
+.decision.HIGH{border-color:var(--serious);background:var(--serious-dim)} .decision.HIGH .decision-word,.decision.HIGH svg{color:var(--serious)}
+.decision.CRITICAL{border-color:var(--critical);background:var(--critical-dim)} .decision.CRITICAL .decision-word,.decision.CRITICAL svg{color:var(--critical)}
+
+.risk-hero{display:flex;align-items:flex-end;gap:14px;margin-bottom:10px}
+.risk-hero-num{font-size:38px;font-weight:800;color:#fff;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.risk-hero-meta{font-size:11px;color:var(--text2);line-height:1.5;padding-bottom:3px}
+.tier-meter{display:grid;grid-template-columns:3fr 2fr 2fr 1.4fr;gap:2px;margin-top:4px;position:relative}
+.tier-seg{height:10px;border-radius:2px;opacity:.35}
+.tier-seg:first-child{border-radius:4px 2px 2px 4px} .tier-seg:last-child{border-radius:2px 4px 4px 2px}
+.tier-seg.on{opacity:1}
+.tier-seg.LOW{background:var(--good)} .tier-seg.MEDIUM{background:var(--warn)}
+.tier-seg.HIGH{background:var(--serious)} .tier-seg.CRITICAL{background:var(--critical)}
+.tier-needle{position:absolute;top:-4px;width:3px;height:18px;border-radius:2px;background:#fff;box-shadow:0 0 0 2px var(--bg3);transform:translateX(-50%);transition:left .35s ease}
+.tier-labels{display:grid;grid-template-columns:3fr 2fr 2fr 1.4fr;gap:2px;margin-top:6px;font-size:9.5px;color:var(--text3);font-family:var(--mono)}
+.tier-labels span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tier-labels b{color:var(--text2);font-weight:600}
+.scale-note{font-size:10px;color:var(--text3);margin-top:6px}
+
+.why-row{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(120px,1fr) 46px;gap:10px;align-items:center;padding:8px 6px;border-bottom:1px solid var(--border);border-radius:6px}
+.why-row:last-child{border-bottom:none}
+.why-row:hover{background:var(--bg4)}
+.why-title{font-size:12px;font-weight:600;color:var(--text)}
+.why-detail{font-size:10.5px;color:var(--text2);margin-top:2px;line-height:1.45}
+.why-bar{position:relative;height:14px}
+.why-bar::before{content:'';position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--border2)}
+.why-fill{position:absolute;top:2px;height:10px;border-radius:4px}
+.why-fill.risk{left:50%;background:var(--s8);border-radius:0 4px 4px 0}
+.why-fill.safe{right:50%;background:var(--s1);border-radius:4px 0 0 4px}
+.why-val{font-family:var(--mono);font-size:11px;color:var(--text2);text-align:right;font-variant-numeric:tabular-nums}
+.why-legend{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin:2px 0 6px;padding:0 52px 0 0}
+.why-legend span{display:inline-flex;align-items:center;gap:6px}
+.why-legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+.derived-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media (max-width:1300px){.derived-grid{grid-template-columns:repeat(2,1fr)}}
+.derived{background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:8px 10px}
+.derived .k{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.derived .v{font-size:13px;font-weight:700;color:var(--text);margin-top:3px;display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.derived.alert{border-color:var(--warn)}
+.derived.alert .v::before{content:'▲';font-size:9px;color:var(--warn)}
+.portal-busy{opacity:.55;transition:opacity .15s}
+
+/* ── INVESTIGATION WORKBENCH ─────────────────────────────────────── */
+.wb-search{padding:14px 18px}
+.wb-search-row{display:grid;grid-template-columns:170px 1fr auto;gap:10px;align-items:center}
+@media (max-width:760px){.wb-search-row{grid-template-columns:1fr}}
+.wb-index{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11px;color:var(--text2);font-family:var(--mono)}
+.wb-index .dot{width:7px;height:7px;border-radius:50%;background:var(--text3)}
+.wb-index.ready .dot{background:var(--good)} .wb-index.building .dot{background:var(--warn);animation:pulse 1.4s infinite}
+.wb-index.unavailable .dot,.wb-index.error .dot{background:var(--critical)}
+.wb-progress{flex:0 0 140px;height:5px;border-radius:3px;background:var(--bg4);overflow:hidden}
+.wb-progress i{display:block;height:100%;background:var(--warn);transition:width .4s}
+.wb-layout{display:grid;grid-template-columns:minmax(300px,370px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1100px){.wb-layout{grid-template-columns:1fr}}
+.wb-queue{position:sticky;top:0}
+@media (max-width:1100px){.wb-queue{position:static}}
+.wb-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.wb-filters select{font-size:11.5px;padding:7px 9px}
+.wb-queue-list{max-height:calc(100vh - 330px);min-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:2px}
+.wb-queue-list::-webkit-scrollbar{width:5px}.wb-queue-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.wb-q-item{display:grid;grid-template-columns:1fr auto;gap:4px 10px;text-align:left;background:var(--bg4);border:1px solid var(--border2);
+  border-radius:9px;padding:9px 11px;cursor:pointer;color:var(--text2);font-family:var(--sans);transition:border-color .15s,background .15s}
+.wb-q-item:hover{border-color:var(--accent)}
+.wb-q-item.active{border-color:var(--accent);background:var(--accent-dim)}
+.wb-q-id{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text)}
+.wb-q-score{font-family:var(--mono);font-size:12px;color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+.wb-q-meta{font-size:10.5px;color:var(--text3);font-family:var(--mono)}
+.wb-status{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:20px;font-family:var(--mono);
+  letter-spacing:.02em;background:var(--bg3);color:var(--text2);border:1px solid var(--border2);white-space:nowrap}
+.wb-status.CONFIRMED_FRAUD{color:var(--critical);border-color:var(--critical);background:var(--critical-dim)}
+.wb-status.ESCALATED{color:var(--serious);border-color:var(--serious);background:var(--serious-dim)}
+.wb-status.DISMISSED{color:var(--good);border-color:var(--good);background:var(--good-dim)}
+.wb-status.PENDING_REVIEW{color:var(--text2)}
+.wb-detail{min-height:520px}
+.wb-detail-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.wb-ctx-title{font-size:17px;font-weight:800;color:#fff;font-family:var(--mono);letter-spacing:-.2px}
+.wb-tabs{margin-bottom:16px}
+.wb-tabs .model-btn[disabled]{opacity:.35;cursor:not-allowed}
+.wb-pane[hidden]{display:none}
+.wb-strip{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.wb-kv-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:6px}
+@media (max-width:1300px){.wb-kv-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.wb-kv{background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:9px 11px;min-width:0}
+.wb-kv .k{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em}
+.wb-kv .v{font-size:13px;font-weight:700;color:var(--text);margin-top:3px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.wb-kv .s{font-size:10.5px;color:var(--text2);margin-top:2px}
+.wb-link{background:none;border:none;color:var(--accent);font:inherit;font-weight:700;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
+.wb-link:hover{opacity:.85}
+.wb-flags{display:flex;flex-wrap:wrap;gap:6px}
+.wb-flag{font-size:10.5px;padding:3px 8px;border-radius:6px;background:var(--bg4);border:1px solid var(--border2);color:var(--text3)}
+.wb-flag.on{color:var(--warn);border-color:var(--warn);background:var(--warn-dim)}
+.wb-actions-row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 4px}
+.wb-workflow{background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:14px 16px;margin-top:6px}
+.wb-workflow textarea{width:100%;min-height:62px;resize:vertical;background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+  padding:8px 10px;border-radius:7px;font-size:12px;font-family:var(--sans)}
+.wb-workflow textarea:focus{outline:none;border-color:var(--accent)}
+.wb-wf-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:10px}
+@media (max-width:900px){.wb-wf-grid{grid-template-columns:1fr}}
+.wb-wf-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.wb-btn{border:1px solid var(--border2);background:var(--bg3);color:var(--text);padding:8px 14px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:var(--sans)}
+.wb-btn:hover{border-color:var(--accent)}
+.wb-btn:disabled{opacity:.4;cursor:not-allowed}
+.wb-btn.fraud{border-color:var(--critical);color:var(--critical)}
+.wb-btn.fraud:hover{background:var(--critical-dim)}
+.wb-btn.escalate{border-color:var(--serious);color:var(--serious)}
+.wb-btn.escalate:hover{background:var(--serious-dim)}
+.wb-btn.dismiss{border-color:var(--good);color:var(--good)}
+.wb-btn.dismiss:hover{background:var(--good-dim)}
+.wb-audit{list-style:none;margin-top:6px}
+.wb-audit li{display:grid;grid-template-columns:14px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.wb-audit li:last-child{border-bottom:none}
+.wb-audit i{width:9px;height:9px;border-radius:50%;margin-top:4px;background:var(--text3)}
+.wb-audit i.CONFIRMED_FRAUD{background:var(--critical)} .wb-audit i.ESCALATED{background:var(--serious)}
+.wb-audit i.DISMISSED{background:var(--good)} .wb-audit i.PENDING_REVIEW{background:var(--accent)}
+.wb-audit .t{font-size:12px;color:var(--text)} .wb-audit .t b{font-weight:700}
+.wb-audit .m{font-size:10.5px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+.wb-audit .n{font-size:11.5px;color:var(--text2);margin-top:4px;line-height:1.5;white-space:pre-wrap}
+.wb-two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+@media (max-width:900px){.wb-two{grid-template-columns:1fr}}
+.wb-score-box{background:var(--bg4);border:1px solid var(--border2);border-radius:10px;padding:12px 14px}
+.wb-score-box .k{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em}
+.wb-score-box .big{font-size:26px;font-weight:800;color:#fff;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+.wb-score-box .s{font-size:10.5px;color:var(--text2);line-height:1.5}
+.wb-feat-table td,.wb-feat-table th{padding:6px 8px}
+.wb-net-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.wb-net-toolbar select{width:auto;min-width:130px;font-size:11.5px;padding:7px 9px}
+.wb-cy{height:440px;border:1px solid var(--border2);border-radius:10px;background:var(--bg2);position:relative}
+.wb-cy-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;
+  font-size:12px;color:var(--text3);pointer-events:none}
+.wb-net-foot{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:10px}
+@media (max-width:900px){.wb-net-foot{grid-template-columns:1fr}}
+.wb-net-info{background:var(--bg4);border:1px solid var(--border2);border-radius:9px;padding:10px 12px;font-size:11.5px;color:var(--text2);line-height:1.6;min-height:70px}
+.wb-net-info b{color:var(--text)}
+.wb-legend{display:flex;flex-wrap:wrap;gap:10px 14px;font-size:10.5px;color:var(--text2)}
+.wb-legend span{display:inline-flex;align-items:center;gap:6px}
+.wb-legend i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.wb-legend i.edge{width:18px;height:3px;border-radius:2px}
+.wb-hist-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px}
+.wb-seg{display:inline-flex;border:1px solid var(--border2);border-radius:8px;overflow:hidden}
+.wb-seg button{background:var(--bg4);border:none;color:var(--text2);padding:6px 11px;font-size:11px;cursor:pointer;font-family:var(--sans)}
+.wb-seg button+button{border-left:1px solid var(--border2)}
+.wb-seg button.on{background:var(--accent-dim);color:var(--accent)}
+.wb-cur-list{font-size:11px;color:var(--text2);line-height:1.6}
+.wb-cur-list b{color:var(--text);font-variant-numeric:tabular-nums}
+.wb-dir{font-family:var(--mono);font-size:10.5px;font-weight:700}
+.wb-dir.out{color:var(--serious)} .wb-dir.in{color:var(--s1)} .wb-dir.self{color:var(--text3)}
+#wb-sim-dock .portal-split{grid-template-columns:1fr}
+#wb-sim-dock .portal-splitter{display:none}
+#wb-sim-dock .portal-right{position:static}
+.wb-msg{font-size:11.5px;margin-top:8px;font-family:var(--mono)}
+.wb-msg.err{color:var(--critical)} .wb-msg.ok{color:var(--good)}
+
+/* ── USER PORTAL — sub-tabs (Screen a transaction · Link Security) ─ */
+.up-tabs{display:inline-flex;border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:18px}
+.up-tabs button{background:var(--bg4);border:none;color:var(--text2);padding:9px 16px;font-size:12px;font-weight:700;
+  cursor:pointer;font-family:var(--sans);display:inline-flex;align-items:center;gap:8px}
+.up-tabs button+button{border-left:1px solid var(--border2)}
+.up-tabs button svg{width:15px;height:15px}
+.up-tabs button.on{background:var(--accent-dim);color:var(--accent)}
+.up-view{display:none}
+.up-view.on{display:block}
+
+/* ── LINK SECURITY ───────────────────────────────────────────────── */
+.ls-examples{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ls-examples button{background:var(--bg4);border:1px solid var(--border2);color:var(--text2);border-radius:7px;
+  padding:5px 9px;font-size:10.5px;font-family:var(--mono);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ls-examples button:hover{border-color:var(--accent);color:var(--text)}
+.ls-hero{display:flex;align-items:center;gap:16px;margin-bottom:12px}
+.ls-score{font-size:38px;font-weight:800;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+.ls-url{font-family:var(--mono);font-size:11px;color:var(--text2);overflow-wrap:anywhere;margin-bottom:12px}
+.ls-url b{color:var(--text)}
+.ls-meter{height:8px;border-radius:4px;background:var(--bg4);overflow:hidden;margin:4px 0 14px}
+.ls-meter i{display:block;height:100%;border-radius:4px;transition:width .35s ease}
+.ls-meter i.LOW{background:var(--good)} .ls-meter i.MEDIUM{background:var(--warn)} .ls-meter i.HIGH{background:var(--critical)}
+.ls-ind{display:grid;grid-template-columns:1fr 44px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);line-height:1.5}
+.ls-ind:last-child{border-bottom:none}
+.ls-ind b{font-family:var(--mono);color:var(--warn);text-align:right;font-variant-numeric:tabular-nums}
+
+/* ── WORKBENCH — live alert counts ───────────────────────────────── */
+.wb-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px;margin-bottom:12px}
+.wb-stat{background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:7px 9px;text-align:left;cursor:pointer;font-family:var(--sans)}
+.wb-stat:hover{border-color:var(--accent)}
+.wb-stat .n{display:block;font-size:15px;font-weight:800;color:#fff;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wb-stat .l{display:block;font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.wb-stat.PENDING_REVIEW .n{color:var(--text)} .wb-stat.ESCALATED .n{color:var(--serious)}
+.wb-stat.CONFIRMED_FRAUD .n{color:var(--critical)} .wb-stat.SAR_FILED .n{color:var(--s7)} .wb-stat.DISMISSED .n{color:var(--good)}
+.wb-status.SAR_FILED{color:var(--s7);border-color:var(--s7);background:#9085e91c}
+.wb-audit i.SAR_FILED{background:var(--s7)}
+.wb-btn.sar{border-color:var(--s7);color:var(--s7)}
+.wb-btn.sar:hover{background:#9085e91c}
+
+/* ── WORKBENCH — SAR report ──────────────────────────────────────── */
+.sar-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.sar-title{font-size:15px;font-weight:800;color:#fff;letter-spacing:.02em}
+.sar-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px}
+.sar-tools{display:flex;flex-wrap:wrap;gap:6px}
+.sar-sec{border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--bg4)}
+.sar-sec h4{font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
+.sar-rows{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:5px 14px;font-size:12px;line-height:1.5}
+.sar-rows dt{color:var(--text3)}
+.sar-rows dd{color:var(--text);overflow-wrap:anywhere}
+.sar-list{list-style:none;font-size:12px;color:var(--text2);line-height:1.55}
+.sar-list li{padding:4px 0;border-bottom:1px solid var(--border)}
+.sar-list li:last-child{border-bottom:none}
+.sar-list b{color:var(--text)}
+.sar-list .up{color:var(--s8);font-family:var(--mono)} .sar-list .down{color:var(--s1);font-family:var(--mono)}
+.sar-narr{font-family:var(--voice, Georgia, serif);font-size:13px;color:var(--text);line-height:1.75}
+.sar-file{border:1px dashed var(--s7);border-radius:10px;padding:12px 14px;margin-top:4px}
+.sar-file textarea{width:100%;min-height:54px;resize:vertical;background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+  padding:8px 10px;border-radius:7px;font-size:12px;font-family:var(--sans)}
+.sar-disclaimer{font-size:10.5px;color:var(--text3);margin-top:10px;line-height:1.6}
+</style>
+<!-- /NEW:STYLE -->
+
+<!-- NEW:NAV -->
+      <div class="nav-item" data-page="portal"><span class="nav-num">•</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M6 9h3M6 13h3M15 9h3"/></svg>
+        User Portal</div>
+      <div class="nav-item" data-page="workbench"><span class="nav-num">•</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8M8 10.5h5M10.5 8v5"/></svg>
+        Investigation Workbench</div>
+<!-- /NEW:NAV -->
+
+<!-- NEW:PAGES -->
+<!-- ══════════════════════════ USER PORTAL ══════════════════════════ -->
+<div class="page" id="pg-portal">
+  <div class="page-head">
+    <div class="eyebrow">Self-service checks · screening + phishing protection</div>
+    <div class="h1">User Portal</div>
+    <div class="h1-sub">Two checks in one place. <b>Screen a transaction</b>: describe a payment in plain terms and FinShield
+      works out the model's 30 features itself, scores it with the production XGBoost model and explains the decision.
+      <b>Link Security</b>: paste a link you received and see the phishing red flags in it.</div>
+  </div>
+
+  <div class="up-tabs" id="up-tabs" role="tablist">
+    <button class="on" data-view="screen" role="tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16M6 9h3M6 13h3M15 9h3"/></svg>
+      Screen a transaction</button>
+    <button data-view="link" role="tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8.6 8 10 4.5-1.4 8-5 8-10V5l-8-3Z"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+      Link Security</button>
+  </div>
+
+  <!-- ── VIEW 1: Screen a transaction ──────────────────────── -->
+  <div class="up-view on" id="up-view-screen">
+
+  <div class="callout" id="portal-docked-note" style="display:none">
+    <b>The simulator is docked in the Investigation Workbench.</b>
+    <button class="btn-ghost" id="portal-undock" style="margin-left:8px">Bring it back here</button>
+  </div>
+  <div class="portal-split" id="portal-split">
+    <!-- ── LEFT: Transaction Composer ─────────────────────────── -->
+    <div class="portal-pane">
+      <div class="card">
+        <div class="card-head"><div>
+          <div class="card-title">Transaction Composer</div>
+          <div class="card-sub">Start from a scenario or enter your own payment</div>
+        </div></div>
+
+        <div class="portal-section">Scenarios</div>
+        <div class="preset-grid" id="portal-presets"><div class="loading-note">Loading scenarios…</div></div>
+
+        <div class="portal-section">Payment</div>
+        <div class="portal-form">
+          <div class="field amount-input">
+            <label class="field-label" for="pt-amount">Amount</label>
+            <input type="number" id="pt-amount" min="0" step="0.01" value="1200">
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-format">Payment method</label>
+            <select id="pt-format"></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-send-cur">Paid in</label>
+            <select id="pt-send-cur"></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-recv-cur">Received in</label>
+            <select id="pt-recv-cur"></select>
+          </div>
+        </div>
+
+        <div class="portal-section">Parties</div>
+        <div class="portal-form">
+          <div class="field">
+            <label class="field-label" for="pt-sender-bank">Sender bank ID</label>
+            <input type="number" id="pt-sender-bank" min="0" step="1" value="12">
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-receiver-bank">Receiver bank ID</label>
+            <input type="number" id="pt-receiver-bank" min="0" step="1" value="12">
+            <div class="field-hint" id="pt-route-hint">Same bank</div>
+          </div>
+          <label class="toggle-row span2"><input type="checkbox" id="pt-self"><span>Sender is paying their own account (self-transfer)</span></label>
+        </div>
+
+        <div class="portal-section">Timing</div>
+        <div class="portal-form">
+          <div class="field">
+            <label class="field-label" for="pt-hour">Time of day</label>
+            <select id="pt-hour"></select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-weekday">Day of week</label>
+            <select id="pt-weekday"></select>
+          </div>
+        </div>
+
+        <div class="portal-section">Sender behaviour</div>
+        <div class="portal-form">
+          <div class="field span2">
+            <label class="field-label" for="pt-usual">Sender's usual payment amount</label>
+            <input type="number" id="pt-usual" min="0" step="0.01" value="1000">
+            <div class="field-hint" id="pt-ratio-hint">This payment is 1.2× their usual amount</div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-txn-hour">Transfers by sender this hour</label>
+            <input type="number" id="pt-txn-hour" min="1" step="1" value="1">
+          </div>
+          <div class="field">
+            <label class="field-label" for="pt-txn-day">Transfers by sender today</label>
+            <input type="number" id="pt-txn-day" min="1" step="1" value="2">
+          </div>
+        </div>
+
+        <div class="portal-actions">
+          <button class="btn" id="pt-screen">Screen transaction</button>
+          <label class="live-toggle"><input type="checkbox" id="pt-live" checked> Re-score as I type</label>
+        </div>
+        <div class="loading-note" id="pt-status" style="margin-top:9px"></div>
+      </div>
+    </div>
+
+    <div class="portal-splitter" id="portal-splitter" role="separator" aria-orientation="vertical" aria-label="Resize panes" tabindex="0"></div>
+
+    <!-- ── RIGHT: Live Risk Verdict ───────────────────────────── -->
+    <div class="portal-pane portal-right">
+      <div class="card" id="pt-verdict-card">
+        <div class="card-head"><div>
+          <div class="card-title">Risk Verdict</div>
+          <div class="card-sub">production XGBoost · 30 features · exact TreeSHAP</div>
+        </div><span class="pill" id="pt-level" style="display:none"></span></div>
+
+        <div id="pt-empty" class="verdict-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z"/><path d="m9 12 2 2 4-4"/></svg>
+          Pick a scenario or fill in the payment,<br>then press <b>Screen transaction</b>.
+        </div>
+
+        <div id="pt-result" style="display:none">
+          <div class="decision" id="pt-decision">
+            <div class="decision-icon" id="pt-decision-icon"></div>
+            <div>
+              <div class="decision-word" id="pt-decision-word">—</div>
+              <div class="decision-action" id="pt-decision-action"></div>
+            </div>
+          </div>
+
+          <div class="risk-hero">
+            <div class="risk-hero-num" id="pt-pct">—</div>
+            <div class="risk-hero-meta"><b style="color:var(--text)">risk percentile</b><br><span id="pt-headline"></span></div>
+          </div>
+          <div class="tier-meter" id="pt-meter">
+            <div class="tier-seg LOW"></div><div class="tier-seg MEDIUM"></div>
+            <div class="tier-seg HIGH"></div><div class="tier-seg CRITICAL"></div>
+            <div class="tier-needle" id="pt-needle" style="left:0"></div>
+          </div>
+          <div class="tier-labels">
+            <span><b>LOW</b>&nbsp;0–90</span><span><b>MED</b>&nbsp;90–97.5</span><span><b>HIGH</b>&nbsp;97.5–99.5</span><span><b>CRIT</b>&nbsp;99.5+</span>
+          </div>
+          <div class="scale-note">Scale is stretched toward the top: each tier gets room, so the riskiest 10% of payments fill most of the bar. Fraud probability <span class="mono" id="pt-prob">—</span>.</div>
+
+          <div class="sec-head" style="margin-top:20px">Why this decision</div>
+          <div class="why-legend"><span><i style="background:var(--s1)"></i>lowers risk</span><span>raises risk<i style="background:var(--s8)"></i></span></div>
+          <div id="pt-why"></div>
+          <div class="loading-note" id="pt-why-note" style="margin-top:6px"></div>
+
+          <div class="sec-head">What FinShield worked out</div>
+          <div class="derived-grid" id="pt-derived"></div>
+          <div class="callout" style="margin:14px 0 0" id="pt-note"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- ── VIEW 2: Link Security ─────────────────────────────── -->
+  <div class="up-view" id="up-view-link">
+    <div class="grid2" style="align-items:start">
+      <div class="card">
+        <div class="card-head"><div>
+          <div class="card-title">Suspicious Link Scanner</div>
+          <div class="card-sub">Paste a link you received by email, SMS or chat · the website is never opened</div>
+        </div></div>
+        <div class="field">
+          <label class="field-label" for="ls-url">Website / URL</label>
+          <input type="text" id="ls-url" placeholder="https://example.com/login" autocomplete="off" spellcheck="false" maxlength="2048">
+        </div>
+        <button class="btn" id="ls-check" style="width:100%">Check link</button>
+        <div class="wb-msg" id="ls-status"></div>
+        <div class="portal-section" style="margin-top:16px">Try an example</div>
+        <div class="ls-examples" id="ls-examples">
+          <button data-url="https://www.wikipedia.org">https://www.wikipedia.org</button>
+          <button data-url="http://192.168.4.20/bank/login/verify">http://192.168.4.20/bank/login/verify</button>
+          <button data-url="https://secure-account-update.verify-login.example.com/kyc">secure-account-update.verify-login…</button>
+          <button data-url="https://bit.ly/3xYzAbc">https://bit.ly/3xYzAbc</button>
+        </div>
+        <div class="callout" style="margin:16px 0 0">
+          <b>Safety note:</b> a LOW result means no structural red flags were found. It is not proof that a site is safe —
+          a brand-new phishing domain can look perfectly normal.
+        </div>
+      </div>
+
+      <div class="card" id="ls-result-card">
+        <div class="card-head"><div>
+          <div class="card-title">Link Analysis Result</div>
+          <div class="card-sub">Red flags found in the link, with the points each one adds</div>
+        </div><span class="pill" id="ls-level" style="display:none"></span></div>
+        <div id="ls-empty" class="verdict-empty">Paste a link and press <b>Check link</b>.</div>
+        <div id="ls-result" style="display:none">
+          <div class="ls-hero">
+            <div class="ls-score" id="ls-score">—</div>
+            <div><div class="stat-sub" style="margin-top:0">risk score / 100</div>
+              <div style="font-size:12px;color:var(--text);margin-top:4px;line-height:1.5" id="ls-advice"></div></div>
+          </div>
+          <div class="ls-meter"><i id="ls-meter"></i></div>
+          <div class="ls-url">Checked: <b id="ls-host"></b><br><span id="ls-full"></span></div>
+          <div class="sec-head" style="margin-top:4px">Red flags</div>
+          <div id="ls-indicators"></div>
+          <div class="loading-note" id="ls-notes" style="margin-top:10px;line-height:1.6"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ INVESTIGATION WORKBENCH ══════════════════ -->
+<div class="page" id="pg-workbench">
+  <div class="page-head">
+    <div class="eyebrow">Alert investigation · transaction lookup</div>
+    <div class="h1">Investigation Workbench</div>
+    <div class="h1-sub">Work the Risk Engine's alert queue, look up any transaction or account, see why the model flagged it,
+      map the accounts it is linked to, record your decision and draft a Suspicious Activity Report (SAR). Every value shown comes from the project's own data files and models.</div>
+  </div>
+
+  <div class="card wb-search">
+    <div class="wb-search-row">
+      <select id="wb-search-mode" aria-label="Search type">
+        <option value="txn">Transaction ID</option>
+        <option value="alert">Alert ID</option>
+        <option value="account">Account ID</option>
+      </select>
+      <input type="text" id="wb-search-input" placeholder="TX-0001234" autocomplete="off" spellcheck="false" aria-label="Search value">
+      <button class="btn" id="wb-search-btn">Look up</button>
+    </div>
+    <div class="wb-index" id="wb-index"><span class="dot"></span><span id="wb-index-text">Transaction index: checking…</span></div>
+    <div class="wb-msg" id="wb-search-status"></div>
+  </div>
+
+  <div class="wb-layout">
+    <!-- ── Alert queue ─────────────────────────────── -->
+    <div class="card wb-queue">
+      <div class="card-head"><div>
+        <div class="card-title">Alert Queue</div>
+        <div class="card-sub" id="wb-queue-sub">Risk Engine alerts (HIGH + CRITICAL)</div>
+      </div></div>
+      <div class="wb-stats" id="wb-stats" title="Live alert counts by analyst decision — click one to filter the queue"></div>
+      <div class="wb-filters">
+        <select id="wb-view" aria-label="Queue view">
+          <option value="queue">Alert queue</option>
+          <option value="cases">Worked cases</option>
+        </select>
+        <select id="wb-level" aria-label="Risk level">
+          <option value="">All levels</option>
+          <option value="CRITICAL">CRITICAL</option>
+          <option value="HIGH">HIGH</option>
+        </select>
+        <select id="wb-order" aria-label="Order">
+          <option value="top">Highest risk first</option>
+          <option value="sample">Representative sample</option>
+        </select>
+        <select id="wb-case-status" aria-label="Decision" style="display:none">
+          <option value="">All decisions</option>
+          <option value="CONFIRMED_FRAUD">Confirmed fraud</option>
+          <option value="ESCALATED">Escalated</option>
+          <option value="SAR_FILED">SAR filed</option>
+          <option value="DISMISSED">Dismissed</option>
+          <option value="PENDING_REVIEW">Reopened</option>
+        </select>
+      </div>
+      <div class="wb-queue-list" id="wb-queue-list"><div class="empty-note">Loading alerts…</div></div>
+      <div class="pager" id="wb-queue-pager"></div>
+    </div>
+
+    <!-- ── Investigation panel ─────────────────────── -->
+    <div class="card wb-detail" id="wb-detail">
+      <div class="wb-detail-head">
+        <div>
+          <div class="eyebrow" id="wb-ctx-kind">Investigation</div>
+          <div class="wb-ctx-title" id="wb-ctx-title">Nothing selected</div>
+          <div class="card-sub" id="wb-ctx-sub">Pick an alert from the queue, or look up a transaction, alert or account.</div>
+        </div>
+        <span class="pill" id="wb-ctx-pill" style="display:none"></span>
+      </div>
+
+      <div class="model-picker wb-tabs" id="wb-tabs" role="tablist">
+        <button class="model-btn active" data-tab="overview" role="tab">Overview</button>
+        <button class="model-btn" data-tab="why" role="tab">Why flagged?</button>
+        <button class="model-btn" data-tab="network" role="tab">Linked accounts</button>
+        <button class="model-btn" data-tab="history" role="tab">Account history</button>
+        <button class="model-btn" data-tab="sar" role="tab">SAR report</button>
+        <button class="model-btn" data-tab="sim" role="tab">Simulator</button>
+      </div>
+
+      <div class="wb-pane" id="wb-pane-overview">
+        <div class="verdict-empty">Pick an alert from the queue, or search a Transaction ID, Alert ID or Account ID above.</div>
+      </div>
+
+      <div class="wb-pane" id="wb-pane-why" hidden></div>
+
+      <div class="wb-pane" id="wb-pane-network" hidden>
+        <div class="wb-net-toolbar">
+          <select id="wb-net-account" aria-label="Network centre"></select>
+          <select id="wb-net-depth" aria-label="Depth">
+            <option value="1">Direct counterparties</option>
+            <option value="2">Two hops</option>
+          </select>
+          <select id="wb-net-limit" aria-label="Counterparties shown">
+            <option value="12">Top 12 counterparties</option>
+            <option value="20" selected>Top 20 counterparties</option>
+            <option value="40">Top 40 counterparties</option>
+          </select>
+          <button class="btn-ghost" id="wb-net-fit">Fit to view</button>
+        </div>
+        <div class="wb-cy" id="wb-cy"><div class="wb-cy-msg" id="wb-cy-msg">Open a transaction or account to map its linked accounts.</div></div>
+        <div class="wb-net-foot">
+          <div class="wb-net-info" id="wb-net-info">Click an account or a link for details. Double-click an account to re-centre the map on it.</div>
+          <div>
+            <div class="wb-legend" id="wb-net-legend"></div>
+            <div class="loading-note" id="wb-net-note" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wb-pane" id="wb-pane-history" hidden></div>
+
+      <div class="wb-pane" id="wb-pane-sar" hidden></div>
+
+      <div class="wb-pane" id="wb-pane-sim" hidden>
+        <div class="callout" id="wb-sim-note" style="margin-bottom:12px">
+          <b>Live Transaction Simulator.</b> This is the User Portal's composer and risk verdict, docked here. Open a
+          transaction to pre-fill it with that transaction's real values, then edit anything to test a what-if.
+        </div>
+        <div id="wb-sim-dock"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /NEW:PAGES -->

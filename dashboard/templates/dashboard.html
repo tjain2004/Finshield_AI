@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FinShield AI — AML Intelligence Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/static/chart.umd.min.js"></script>
+<style>
+/* ================================================================
+   FinShield AI — design tokens
+   Categorical + status colors validated with the dataviz color
+   validator against this dashboard's dark card surface (#0A1B35):
+   worst adjacent CVD ΔE 8.4, worst normal-vision ΔE 19.3, all ≥3:1.
+   ================================================================ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:        #050B16;
+  --bg2:       #0A1424;
+  --bg3:       #0A1B35;
+  --bg4:       #132A4A;
+  --border:    #1B2C48;
+  --border2:   #24395C;
+
+  --accent:    #00D4FF;
+  --accent-dim:#00D4FF1c;
+
+  /* categorical series — fixed order, assigned per-entity, never by rank */
+  --s1: #3987e5;  /* blue    */
+  --s2: #d95926;  /* orange  */
+  --s3: #199e70;  /* aqua    */
+  --s4: #c98500;  /* yellow  */
+  --s5: #d55181;  /* magenta */
+  --s6: #1fae1f;  /* green   */
+  --s7: #9085e9;  /* violet  */
+  --s8: #e66767;  /* red     */
+
+  /* status — reserved, never reused as a series color */
+  --good:     #22c55e;
+  --warn:     #fab219;
+  --serious:  #ec835a;
+  --critical: #e35555;
+  --good-dim:    #22c55e1c;
+  --warn-dim:    #fab2191c;
+  --serious-dim: #ec835a1c;
+  --critical-dim:#e355551c;
+
+  --text:  #E9F1FA;
+  --text2: #93A9C4;
+  --text3: #59708F;
+
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;-webkit-font-smoothing:antialiased}
+body{overflow:hidden}
+img{max-width:100%;display:block}
+a{color:inherit}
+
+/* ── layout shell ─────────────────────────────────────── */
+#app{display:flex;height:100vh;overflow:hidden}
+
+.sidebar{
+  width:236px;flex-shrink:0;background:var(--bg2);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sidebar-brand{padding:22px 20px 16px;border-bottom:1px solid var(--border)}
+.brand-row{display:flex;align-items:center;gap:9px}
+.brand-mark{width:26px;height:26px;flex-shrink:0}
+.brand-name{font-size:16px;font-weight:800;letter-spacing:-.3px;color:#fff}
+.brand-sub{font-size:9.5px;color:var(--text3);letter-spacing:.14em;text-transform:uppercase;margin-top:5px;padding-left:35px}
+
+.sidebar-status{
+  margin:14px 16px;padding:9px 12px;background:var(--bg3);
+  border:1px solid var(--border);border-radius:9px;font-size:11px;
+  display:flex;align-items:center;gap:8px;
+}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 7px var(--good);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.status-label{color:var(--text2)}
+.status-val{color:var(--good);font-family:var(--mono);margin-left:auto;font-weight:600}
+
+.nav-scroll{flex:1;overflow-y:auto;padding-bottom:10px}
+.nav-scroll::-webkit-scrollbar{width:0}
+.nav-section-label{font-size:9px;color:var(--text3);letter-spacing:.14em;text-transform:uppercase;padding:16px 20px 6px}
+.nav-item{
+  display:flex;align-items:center;gap:11px;padding:9px 20px;cursor:pointer;
+  font-size:12.5px;font-weight:500;color:var(--text2);border-left:2px solid transparent;
+  transition:background .15s,color .15s;white-space:nowrap;user-select:none;
+}
+.nav-item:hover{color:var(--text);background:var(--bg3)}
+.nav-item.active{color:var(--accent);background:var(--accent-dim);border-left-color:var(--accent)}
+.nav-item svg{width:15px;height:15px;flex-shrink:0;opacity:.75}
+.nav-item.active svg{opacity:1}
+.nav-num{font-family:var(--mono);font-size:9.5px;color:var(--text3);width:14px;flex-shrink:0}
+.nav-item.active .nav-num{color:var(--accent)}
+
+.sidebar-bottom{padding:14px 20px;border-top:1px solid var(--border)}
+.build-info{font-size:9.5px;color:var(--text3);font-family:var(--mono);line-height:1.6}
+
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.topbar{
+  height:56px;flex-shrink:0;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 26px;gap:16px;
+}
+.topbar-title{font-size:14px;font-weight:700;color:#fff}
+.topbar-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.chip{font-size:10px;font-family:var(--mono);padding:4px 11px;border-radius:20px;border:1px solid var(--border2);color:var(--text2)}
+.chip.live{border-color:var(--good);color:var(--good);background:var(--good-dim)}
+
+.content{flex:1;overflow-y:auto;padding:24px 28px 60px}
+.content::-webkit-scrollbar{width:6px}
+.content::-webkit-scrollbar-track{background:transparent}
+.content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+
+.page{display:none;animation:fadein .25s ease}
+.page.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ── typography helpers ──────────────────────────────── */
+.eyebrow{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6px}
+.h1{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px}
+.h1-sub{font-size:12.5px;color:var(--text2);margin-top:6px;max-width:760px;line-height:1.6}
+.sec-head{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text2);margin:28px 0 12px;display:flex;align-items:center;gap:8px}
+.sec-head::after{content:'';flex:1;height:1px;background:var(--border)}
+.page-head{margin-bottom:22px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+
+/* ── stat grid / cards ───────────────────────────────── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:8px}
+.stat-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:15px 17px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.c1::before{background:var(--s1)} .stat-card.c2::before{background:var(--s2)}
+.stat-card.c3::before{background:var(--s3)} .stat-card.c4::before{background:var(--s4)}
+.stat-card.c5::before{background:var(--s5)} .stat-card.c6::before{background:var(--s6)}
+.stat-card.c7::before{background:var(--s7)} .stat-card.c8::before{background:var(--s8)}
+.stat-card.good::before{background:var(--good)} .stat-card.warn::before{background:var(--warn)}
+.stat-card.serious::before{background:var(--serious)} .stat-card.critical::before{background:var(--critical)}
+.stat-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.stat-val{font-size:21px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.stat-sub{font-size:10.5px;color:var(--text2);margin-top:4px}
+
+/* ── cards & grids ───────────────────────────────────── */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:1100px){.grid2,.grid3{grid-template-columns:1fr}}
+.card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:10px}
+.card-title{font-size:13px;font-weight:700;color:#fff}
+.card-sub{font-size:10.5px;color:var(--text3);margin-top:2px}
+.chart-wrap{position:relative;height:280px}
+.chart-wrap.tall{height:480px}
+.chart-wrap.short{height:200px}
+
+.chart-img-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  margin-bottom:0;display:flex;flex-direction:column;transition:border-color .15s}
+.chart-img-card:hover{border-color:var(--accent)}
+.chart-img-card a{display:block;line-height:0}
+.chart-img-card img{width:100%;height:240px;object-fit:contain;background:#fff;padding:6px;cursor:zoom-in}
+.chart-img-cap{margin-top:auto}
+.chart-img-cap{padding:10px 16px;font-size:11px;color:var(--text2);border-top:1px solid var(--border)}
+.chart-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-bottom:8px;align-items:start}
+
+/* ── tables ──────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);
+   padding:8px 10px;border-bottom:1px solid var(--border2);font-weight:600;white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text2);white-space:nowrap;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--bg4)}
+.table-scroll{overflow-x:auto}
+td.name,th.name{color:var(--text);font-weight:600;white-space:normal}
+.mono{font-family:var(--mono)}
+
+/* ── badges / pills ──────────────────────────────────── */
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;font-family:var(--mono);letter-spacing:.02em}
+.pill.LOW{background:var(--good-dim);color:var(--good)}
+.pill.MEDIUM{background:var(--warn-dim);color:var(--warn)}
+.pill.HIGH{background:var(--serious-dim);color:var(--serious)}
+.pill.CRITICAL{background:var(--critical-dim);color:var(--critical)}
+.pill.win{background:var(--accent-dim);color:var(--accent)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* ── swatch legend ───────────────────────────────────── */
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:10.5px;color:var(--text2)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+/* ── finding lists ────────────────────────────────────── */
+.finding-list{list-style:none}
+.finding-list li{position:relative;padding:7px 0 7px 18px;font-size:12px;color:var(--text2);line-height:1.6;border-bottom:1px solid var(--border)}
+.finding-list li:last-child{border-bottom:none}
+.finding-list li::before{content:'';position:absolute;left:0;top:14px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.finding-list b{color:var(--text)}
+
+.step-list{counter-reset:step}
+.step-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.step-item:last-child{border-bottom:none}
+.step-num{counter-increment:step;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--bg4);
+  color:var(--accent);font-family:var(--mono);font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.step-num::before{content:counter(step)}
+.step-body b{color:var(--text);font-size:12.5px}
+.step-body p{font-size:11.5px;color:var(--text2);margin-top:3px;line-height:1.55}
+
+.callout{background:var(--bg4);border:1px solid var(--border2);border-left:3px solid var(--accent);border-radius:8px;padding:13px 16px;font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:16px}
+.callout.warn-box{border-left-color:var(--warn)}
+.callout.critical-box{border-left-color:var(--critical)}
+.callout b{color:var(--text)}
+
+.feature-tag{display:inline-block;background:var(--bg4);border:1px solid var(--border2);color:var(--text2);
+  font-family:var(--mono);font-size:10px;padding:3px 8px;border-radius:6px;margin:0 6px 6px 0}
+
+/* ── buttons / inputs ────────────────────────────────── */
+.btn{background:var(--accent);color:#00202b;border:none;padding:9px 18px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.88}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2);padding:7px 13px;border-radius:7px;font-size:11px;cursor:pointer}
+.btn-ghost:hover{color:var(--text);border-color:var(--accent)}
+input[type=text],input[type=number],select{
+  background:var(--bg4);border:1px solid var(--border2);color:var(--text);
+  padding:8px 10px;border-radius:7px;font-size:12px;font-family:var(--sans);width:100%;
+}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+label.field-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px}
+.field{margin-bottom:12px}
+.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media (max-width:900px){.form-grid{grid-template-columns:1fr 1fr}}
+.toggle-row{display:flex;align-items:center;gap:8px;background:var(--bg4);border:1px solid var(--border2);border-radius:7px;padding:9px 11px;cursor:pointer}
+.toggle-row input{width:auto}
+.toggle-row span{font-size:11.5px;color:var(--text2)}
+
+/* ── pipeline strip (overview) ───────────────────────── */
+.pipeline{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.pipe-step{background:var(--bg4);border:1px solid var(--border2);border-radius:7px;padding:8px 12px;font-size:10.5px;color:var(--text2);display:flex;align-items:center;gap:7px;cursor:pointer;transition:all .15s}
+.pipe-step:hover{border-color:var(--accent);color:var(--text)}
+.pipe-step b{color:var(--text);font-family:var(--mono);font-size:9.5px}
+
+/* ── narrative / SAR console ─────────────────────────── */
+.sar-box{background:#020508;border:1px solid var(--border2);border-radius:8px;padding:16px;font-family:var(--mono);font-size:11px;
+  color:#9fe8ff;line-height:1.65;white-space:pre-wrap;max-height:420px;overflow-y:auto}
+
+.pager{display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+.page-btn{background:var(--bg4);border:1px solid var(--border2);color:var(--text2);padding:6px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--mono)}
+.page-btn:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
+.page-btn:disabled{opacity:.35;cursor:default}
+.page-btn.cur{color:var(--accent);border-color:var(--accent)}
+.filter-row{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-row select,.filter-row input{width:auto;min-width:130px}
+
+.model-picker{display:flex;flex-wrap:wrap;gap:8px}
+.model-btn{background:var(--bg4);border:1px solid var(--border2);color:var(--text2);
+  padding:8px 14px;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;
+  transition:all .15s;font-family:var(--sans)}
+.model-btn:hover{color:var(--text);border-color:var(--accent)}
+.model-btn.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.metric-box{background:var(--bg4);border:1px solid var(--border2);border-radius:8px;padding:11px 13px}
+.metric-box .k{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.metric-box .v{font-size:17px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.metric-box.good .v{color:var(--good)} .metric-box.bad .v{color:var(--critical)}
+.metric-box.warn .v{color:var(--warn)}
+.param-row{display:inline-block;background:var(--bg4);border:1px solid var(--border2);border-radius:6px;
+  padding:4px 9px;margin:0 6px 6px 0;font-family:var(--mono);font-size:10px;color:var(--text2)}
+.param-row b{color:var(--accent);font-weight:600}
+.cm-table th{text-align:center}
+.cm-table .cm-rowhead{text-align:left;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+.cm-cell{text-align:center;font-family:var(--mono);font-size:16px;font-weight:700;padding:20px 10px}
+.cm-tp{color:var(--good);background:var(--good-dim)}
+.cm-tn{color:var(--s1);background:#3987e51c}
+.cm-fp{color:var(--critical);background:var(--critical-dim)}
+.cm-fn{color:var(--serious);background:var(--serious-dim)}
+.empty-note{font-size:11.5px;color:var(--text3);padding:14px 0;text-align:center}
+.loading-note{font-size:11px;color:var(--text3);font-family:var(--mono)}
+
+/* ── Overview: Transaction Overview + Linked Account Network ── */
+.txo-flags-head{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin:14px 0 7px}
+.txo-flags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.txo-flag{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;padding:6px 11px;border-radius:8px;
+  background:var(--bg4);border:1px solid var(--border2);color:var(--text3)}
+.txo-flag i{width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.txo-flag.on{color:var(--warn);border-color:var(--warn);background:var(--warn-dim);font-weight:700}
+.txo-flag.on i{background:var(--warn)}
+.txo-meta{font-size:11.5px;color:var(--text2);margin-top:6px}
+.txo-meta b{font-family:var(--mono);color:var(--text)}
+.txo-amount-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:12px}
+.txo-amount{font-size:26px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;line-height:1.2;margin-top:2px;overflow-wrap:anywhere}
+.txo-amount small{font-size:13px;font-weight:600;color:var(--text2);margin-left:6px}
+.net-suggest{margin-top:12px}
+.net-suggest-head{font-size:11px;color:var(--text2);margin-bottom:7px}
+.net-suggest-head span{color:var(--text3)}
+.net-suggest-list{display:flex;flex-wrap:wrap;gap:6px}
+.net-suggest-list button{display:inline-flex;align-items:center;gap:6px;background:var(--critical-dim);border:1px solid var(--critical);
+  color:var(--text);border-radius:7px;padding:5px 9px;font-size:11px;font-family:var(--mono);cursor:pointer}
+.net-suggest-list button:hover{background:var(--critical);color:#fff}
+.net-suggest-list button small{color:var(--text2);font-size:10px}
+.net-mule-key,.net-suggest-list b{font-size:9px;font-weight:800;color:var(--serious);letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════════════════════ SIDEBAR ══════════════════════════ -->
+  <div class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-row">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="#00D4FF" stroke-width="1.8"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z"/><path d="m9 12 2 2 4-4" stroke-width="2"/></svg>
+        <span class="brand-name">FinShield AI</span>
+      </div>
+      <div class="brand-sub">AML Intelligence Platform</div>
+    </div>
+
+    <div class="sidebar-status">
+      <span class="status-dot"></span>
+      <span class="status-label">System</span>
+      <span class="status-val" id="sb-status">ONLINE</span>
+    </div>
+
+    <div class="nav-scroll">
+      <div class="nav-section-label">Platform</div>
+      <div class="nav-item active" data-page="overview"><span class="nav-num">•</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        Overview</div>
+
+      <div class="nav-section-label">Notebooks 01–11</div>
+      <div class="nav-item" data-page="cleaning"><span class="nav-num">01</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M8 7V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3m-9 0 1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/></svg>
+        Data Cleaning</div>
+      <div class="nav-item" data-page="eda"><span class="nav-num">02</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 15l4-5 3 3 5-7"/></svg>
+        Exploratory Analysis</div>
+      <div class="nav-item" data-page="features"><span class="nav-num">03</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>
+        Feature Engineering</div>
+      <div class="nav-item" data-page="preprocessing"><span class="nav-num">04</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="9" cy="6" r="1.6" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="7" cy="18" r="1.6" fill="currentColor" stroke="none"/></svg>
+        Preprocessing</div>
+      <div class="nav-item" data-page="mlmodels"><span class="nav-num">05</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        ML Model Comparison</div>
+      <div class="nav-item" data-page="cnn"><span class="nav-num">06</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+        CNN Deep Learning</div>
+      <div class="nav-item" data-page="lstm"><span class="nav-num">07</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h3l2-7 4 14 3-10 2 5h4"/></svg>
+        LSTM Deep Learning</div>
+      <div class="nav-item" data-page="graph"><span class="nav-num">08</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/><path d="m8 7 8 0M7 8l4 8M17 8l-4 8"/></svg>
+        Graph Network Analysis</div>
+      <div class="nav-item" data-page="shap"><span class="nav-num">09</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        SHAP Explainability</div>
+      <div class="nav-item" data-page="risk"><span class="nav-num">10</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z"/><path d="M12 8v5" stroke-width="2"/><circle cx="12" cy="16" r="0.9" fill="currentColor" stroke="none"/></svg>
+        Risk Scoring Engine</div>
+      <div class="nav-item" data-page="live"><span class="nav-num">11</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg>
+        Live Prediction &amp; Alerts</div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="build-info">FinShield AI v1.0<br>11 notebooks · 5.08M txns<br>IBM AML dataset</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ MAIN ══════════════════════════ -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title" id="page-title">Overview</div>
+        <div class="topbar-sub" id="page-sub">Executive summary — full pipeline status</div>
+      </div>
+      <div class="topbar-right">
+        <span class="chip" id="chip-alerts">— alerts</span>
+        <span class="chip live">● LIVE</span>
+      </div>
+    </div>
+
+    <div class="content" id="content">
+      <!-- page sections injected by build.py get concatenated here -->
+      <!-- ══════════════════════════ OVERVIEW ══════════════════════════ -->
+<div class="page active" id="pg-overview">
+  <div class="page-head">
+    <div class="eyebrow">Executive Summary</div>
+    <div class="h1">Anti-Money-Laundering Intelligence Platform</div>
+    <div class="h1-sub">A multi-model ensemble — 7 classical ML models, CNN-1D, LSTM, graph network
+      analysis and SHAP explainability — trained end-to-end across 11 notebooks on IBM's 5.08M-row
+      synthetic AML transaction dataset, feeding a calibrated risk-scoring engine and a live
+      SHAP-explained prediction console.</div>
+  </div>
+
+  <div class="card" id="txn-lookup-card">
+    <div class="card-head"><div><div class="card-title">Transaction Overview</div><div class="card-sub">search any of the 5,078,336 transactions by ID — sender &amp; receiver, banks, amounts and preprocessing flags</div></div></div>
+    <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end">
+      <div class="field" style="margin-bottom:0"><label class="field-label">Transaction ID</label><input type="text" id="txn-id-input" placeholder="e.g. 1  (valid range 1 – 5,078,336)"></div>
+      <button class="btn" id="btn-txn-lookup">Search</button>
+    </div>
+    <div class="loading-note" id="txn-lookup-status" style="margin-top:8px"></div>
+
+    <div id="txn-lookup-result" style="display:none;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-weight:700;font-size:13px" id="txn-result-id">Transaction #—</span>
+        <span class="pill" id="txn-result-level">—</span>
+        <span class="loading-note" id="txn-result-fraud"></span>
+      </div>
+      <div class="txo-flags-head">Potential flags</div>
+      <div class="txo-flags" id="txn-flags"></div>
+      <div class="grid2">
+        <div class="stat-card c1">
+          <div class="stat-label">Sender Account</div>
+          <div class="stat-val" id="txn-sender" style="font-size:20px">—</div>
+          <div class="txo-meta">Sender Bank ID <b id="txn-sender-bank">—</b></div>
+          <div class="txo-amount-label">Amount paid</div>
+          <div class="txo-amount" id="txn-amount-paid">—</div>
+        </div>
+        <div class="stat-card c7">
+          <div class="stat-label">Receiver Account</div>
+          <div class="stat-val" id="txn-receiver" style="font-size:20px">—</div>
+          <div class="txo-meta">Receiver Bank ID <b id="txn-receiver-bank">—</b></div>
+          <div class="txo-amount-label">Amount received</div>
+          <div class="txo-amount" id="txn-amount-received">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="network-card">
+    <div class="card-head"><div><div class="card-title">Linked Account Network</div><div class="card-sub">click any node to re-center — walk the 515K-account transaction graph hop by hop</div></div></div>
+    <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end">
+      <div class="field" style="margin-bottom:0"><label class="field-label">Account ID</label><input type="text" id="net-account-input" placeholder="e.g. 942"></div>
+      <button class="btn" id="btn-net-search">Search</button>
+    </div>
+    <div class="loading-note" id="net-status" style="margin-top:8px"></div>
+    <div class="net-suggest" id="net-suggest-wrap" style="display:none">
+      <div class="net-suggest-head">Accounts in suspicious communities — click one to see it in red
+        <span>(from the Graph Network Analysis notebook · <b class="net-mule-key">MULE</b> = flagged mule account)</span></div>
+      <div class="net-suggest-list" id="net-suggest"></div>
+    </div>
+
+    <div id="net-result" style="display:none;margin-top:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn-ghost" id="btn-net-back" style="display:none">← Back</button>
+        <span style="font-weight:700;font-size:13px" id="net-center-label">Account #—</span>
+        <span class="pill" id="net-center-community">—</span>
+        <span class="pill HIGH" id="net-center-mule" style="display:none">MULE ACCOUNT</span>
+      </div>
+      <div class="loading-note" id="net-degree-note" style="margin-bottom:8px"></div>
+      <div class="chart-wrap" style="height:460px"><svg id="net-svg" viewBox="0 0 760 500" width="100%" height="100%"></svg></div>
+      <div class="loading-note" style="margin-top:8px">
+        <span style="color:var(--good)">●</span> money in &nbsp;
+        <span style="color:var(--accent)">●</span> money out &nbsp;
+        <span style="color:var(--critical)">●</span> suspicious community &nbsp;
+        <span style="color:var(--serious)">◯</span> mule account &nbsp;
+        · edge label = amount moved on that link (+N = other currencies too)
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card c1"><div class="stat-label">Total Transactions</div><div class="stat-val" id="ov-total">5,078,336</div><div class="stat-sub">IBM Small-HI synthetic AML set</div></div>
+    <div class="stat-card c8"><div class="stat-label">Confirmed Fraud</div><div class="stat-val" id="ov-fraud">5,177</div><div class="stat-sub" id="ov-fraud-rate">0.1019% of all transactions</div></div>
+    <div class="stat-card c4"><div class="stat-label">Class Imbalance</div><div class="stat-val" id="ov-imbalance">979 : 1</div><div class="stat-sub">normal vs fraud</div></div>
+    <div class="stat-card c7"><div class="stat-label">Unique Accounts</div><div class="stat-val" id="ov-accounts">515,080</div><div class="stat-sub">515K nodes in transaction graph</div></div>
+    <div class="stat-card win"><div class="stat-label">Champion Model</div><div class="stat-val" id="ov-best-model" style="font-size:15px">XGBoost</div><div class="stat-sub" id="ov-best-auc">AUC-ROC 0.9709</div></div>
+    <div class="stat-card critical"><div class="stat-label">Alerts Generated</div><div class="stat-val" id="ov-alerts">129,124</div><div class="stat-sub" id="ov-alert-rate">2.54% alert rate</div></div>
+    <div class="stat-card good"><div class="stat-label">Fraud Capture Rate</div><div class="stat-val" id="ov-capture">3.84%</div><div class="stat-sub" id="ov-capture-detail">199 / 5,177 fraud in alert queue</div></div>
+    <div class="stat-card c3"><div class="stat-label">Model Features</div><div class="stat-val">29</div><div class="stat-sub">30 for the production XGBoost</div></div>
+  </div>
+
+  <div class="sec-head">Pipeline — 11 Notebooks</div>
+  <div class="callout">This dashboard mirrors the exact notebook sequence used to build FinShield AI.
+    Click any stage below (or use the sidebar) to open its tab with real metrics, charts and
+    findings pulled straight from that notebook's saved outputs.</div>
+  <div class="pipeline">
+    <div class="pipe-step" data-goto="cleaning"><b>01</b> Data Cleaning</div>
+    <div class="pipe-step" data-goto="eda"><b>02</b> EDA</div>
+    <div class="pipe-step" data-goto="features"><b>03</b> Feature Engineering</div>
+    <div class="pipe-step" data-goto="preprocessing"><b>04</b> Preprocessing</div>
+    <div class="pipe-step" data-goto="mlmodels"><b>05</b> ML Models</div>
+    <div class="pipe-step" data-goto="cnn"><b>06</b> CNN-1D</div>
+    <div class="pipe-step" data-goto="lstm"><b>07</b> LSTM</div>
+    <div class="pipe-step" data-goto="graph"><b>08</b> Graph Network</div>
+    <div class="pipe-step" data-goto="shap"><b>09</b> SHAP</div>
+    <div class="pipe-step" data-goto="risk"><b>10</b> Risk Engine</div>
+    <div class="pipe-step" data-goto="live"><b>11</b> Live Prediction</div>
+  </div>
+
+  <div class="grid2" style="margin-top:24px">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Model Leaderboard</div><div class="card-sub">7 models · ranked by AUC-ROC · Notebook 05</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-ov-leaderboard"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Risk Level Distribution</div><div class="card-sub">Calibrated from live score distribution · Notebook 10</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-ov-risk"></canvas></div>
+    </div>
+  </div>
+
+  <div class="sec-head">What Each Model Contributes</div>
+  <div class="grid3">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Tabular models (05)</div>
+      <div class="card-sub" style="line-height:1.6">7 classical ML models trained on 29–30 engineered
+        features per transaction. XGBoost wins on AUC-ROC (0.9709) and AUC-PR (0.2379); this is the
+        production scoring model.</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Sequence models (06–07)</div>
+      <div class="card-sub" style="line-height:1.6">CNN-1D and LSTM look at each account's transaction
+        <i>history</i>, not just one row. Both under-performed the tabular model on this dataset — an
+        honest, reported finding, not hidden.</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Structural + explainable (08–09)</div>
+      <div class="card-sub" style="line-height:1.6">Graph analysis surfaces mule accounts and circular
+        flows invisible to row-level models; SHAP explains every XGBoost decision feature-by-feature
+        for regulator-ready SAR narratives.</div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════ DATA CLEANING ══════════════════════════ -->
+<div class="page" id="pg-cleaning">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 01 · Data understanding and cleaning</div>
+    <div class="h1">Data Cleaning</div>
+    <div class="h1-sub">IBM's synthetic AML transaction log arrives as raw bank-transfer records —
+      renamed columns, parsed timestamps, encoded categoricals, and four independent outlier-detection
+      methods combined into a master suspicion flag.</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card c1"><div class="stat-label">Raw Rows</div><div class="stat-val">5,078,336</div><div class="stat-sub">15 original columns</div></div>
+    <div class="stat-card c3"><div class="stat-label">Missing Values</div><div class="stat-val">0</div><div class="stat-sub">clean at source</div></div>
+    <div class="stat-card c4"><div class="stat-label">Duplicate Rows Removed</div><div class="stat-val">9</div><div class="stat-sub">exact duplicates</div></div>
+    <div class="stat-card c7"><div class="stat-label">Unique Accounts</div><div class="stat-val">515,080</div><div class="stat-sub">sender + receiver combined</div></div>
+    <div class="stat-card win"><div class="stat-label">Final Shape</div><div class="stat-val" style="font-size:17px">5,078,336 × 32</div><div class="stat-sub">saved as cleaned_transactions.csv (983 MB)</div></div>
+  </div>
+
+  <div class="sec-head">8 Cleaning Steps Applied</div>
+  <div class="card">
+    <div class="step-list">
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Rename columns to clear names</b><p>Account→Sender Account, Account.1→Receiver Account, From/To Bank→Sender/Receiver Bank ID.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Parse Timestamp, extract time features</b><p>Hour, Day, DayOfWeek, IsWeekend pulled from the raw "2022/09/01 00:20" string.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Drop duplicate rows</b><p>9 exact duplicates found and removed — dataset otherwise had zero missing values.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Flag cross-bank &amp; self-transfers</b><p>4,387,008 transactions (86.4%) cross banks; 591,212 (11.6%) are same-account self-transfers — both classic AML signals.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Encode categoricals — deliberately mixed strategy</b><p>Payment Format (7 values, no order) → one-hot encoded. Currencies → label encoded, which is safe for XGBoost's tree splits but would mislead a linear model. Accounts (515K+ unique) → label encoded only, never one-hot.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Flag currency mismatch</b><p>72,166 transactions (1.4%) pay in one currency and receive in another — a classic layering technique.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Four independent outlier-detection methods</b><p>IQR (17.36% flagged), Z-score &gt; 3 (0.02%), account-level ratio — 5× a sender's own median (15.17%), and transaction velocity — 10+ txns/hour (732,311 accounts). Combined into <span class="mono">outlier_score</span> (0–4) and a master <span class="mono">is_outlier</span> flag.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Save final 32-column cleaned dataset</b><p>5,177 fraud rows, 5,073,159 normal rows, zero missing values — ready for EDA and feature engineering.</p></div></div>
+    </div>
+  </div>
+
+  <div class="sec-head">Outlier Detection — Method Comparison</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Flags Raised per Method</div><div class="card-sub">% of 5.08M transactions</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-cln-outliers"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Cross-Bank &amp; Self-Transfer Fraud Rate</div><div class="card-sub">fraud rate (%) by flag</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-cln-flags"></canvas></div>
+    </div>
+  </div>
+
+  <div class="callout"><b>Reading the outlier signal honestly:</b> outlier score doesn't rise monotonically
+    with fraud rate (0.091% → 0.118% → 0.137% → 0.091% → 0.000% across scores 0–4) — a reminder that no
+    single heuristic separates fraud cleanly on this dataset, which is exactly why the pipeline layers
+    7 ML models, 2 deep-learning models, graph structure and SHAP on top of these engineered flags rather
+    than thresholding on any one of them.</div>
+
+  <div class="sec-head">Payment Format Breakdown</div>
+  <div class="card">
+    <div class="table-scroll"><table>
+      <thead><tr><th class="name">Payment Format</th><th>Transactions</th><th>Share</th></tr></thead>
+      <tbody>
+        <tr><td class="name">Cheque</td><td class="mono">1,864,331</td><td class="mono">36.7%</td></tr>
+        <tr><td class="name">Credit Card</td><td class="mono">1,323,324</td><td class="mono">26.1%</td></tr>
+        <tr><td class="name">ACH</td><td class="mono">600,793</td><td class="mono">11.8%</td></tr>
+        <tr><td class="name">Cash</td><td class="mono">490,891</td><td class="mono">9.7%</td></tr>
+        <tr><td class="name">Reinvestment</td><td class="mono">481,056</td><td class="mono">9.5%</td></tr>
+        <tr><td class="name">Wire</td><td class="mono">171,855</td><td class="mono">3.4%</td></tr>
+        <tr><td class="name">Bitcoin</td><td class="mono">146,086</td><td class="mono">2.9%</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="cleaning"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ EDA ══════════════════════════ -->
+<div class="page" id="pg-eda">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 02 · Exploratory Data Analysis</div>
+    <div class="h1">Exploratory Data Analysis</div>
+    <div class="h1-sub">Nine charts probing when, how and through what channel laundering happens —
+      the findings here directly shaped which features got engineered next.</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card c8"><div class="stat-label">Riskiest Payment Format</div><div class="stat-val" style="font-size:16px">ACH</div><div class="stat-sub">0.746% fraud rate — 7× average</div></div>
+    <div class="stat-card c4"><div class="stat-label">Riskiest Hour</div><div class="stat-val">12:00</div><div class="stat-sub">0.174% fraud — noon peak</div></div>
+    <div class="stat-card c7"><div class="stat-label">Riskiest Day</div><div class="stat-val">Sunday</div><div class="stat-sub">0.311% fraud — 3× average</div></div>
+    <div class="stat-card c1"><div class="stat-label">Cross-Bank Fraud Rate</div><div class="stat-val">0.116%</div><div class="stat-sub">vs 0.015% same-bank — 7.8× higher</div></div>
+  </div>
+
+  <div class="sec-head">Key EDA Findings</div>
+  <div class="card">
+    <ul class="finding-list">
+      <li><b>Extreme class imbalance</b> — 5,073,159 normal vs 5,177 fraud (0.102%), a 979:1 ratio. Every downstream model, metric and threshold choice is shaped by this.</li>
+      <li><b>ACH dominates fraud</b> — 0.746% fraud rate vs 0.017–0.038% for Cheque/Credit Card/Cash/Bitcoin, and effectively 0% for Reinvestment and Wire.</li>
+      <li><b>Amounts are heavily right-skewed</b> — fraud mean $36.1M vs normal mean $4.5M, but fraud <i>median</i> ($8,667) is actually higher than normal median ($1,411), while normal transactions include the extreme long tail (max $1.05 trillion) — motivating the log transform in preprocessing.</li>
+      <li><b>Cross-bank transfers are 7.8× riskier</b> — 0.116% fraud rate vs 0.015% for same-bank transfers. Self-transfers are the opposite signal: only 0.002% fraud vs 0.115% for transfers between different accounts.</li>
+      <li><b>Sunday is the riskiest day</b> — 0.311% fraud, roughly 3× the weekly average (0.132% Mon, 0.132% Tue, 0.117% Wed, 0.056% Thu, 0.067% Fri, 0.204% Sat).</li>
+      <li><b>Weak individual correlations</b> — the single strongest linear correlate of fraud is <span class="mono">Day</span> at only 0.019; no engineered flag alone separates fraud, reinforcing the case for ensemble / non-linear models.</li>
+    </ul>
+  </div>
+
+  <div class="callout warn-box"><b>Two charts are drawn live here instead of loaded from disk.</b>
+    Your notebook's <span class="mono">Class Balance Analysis.png</span> and
+    <span class="mono">Fraud by hour of day.png</span> were both saved as blank white images — a
+    <span class="mono">plt.savefig()</span> called after <span class="mono">plt.show()</span> writes an
+    empty figure. The dashboard detects blank exports automatically and rebuilds these two from the
+    real data instead, so the tab is never missing a chart.</div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Class Balance Analysis</div><div class="card-sub">rebuilt live · 979:1 imbalance</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-eda-balance"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Fraud Rate by Hour of Day</div><div class="card-sub" id="eda-hour-sub">rebuilt live from cleaned_transactions.csv</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-eda-hour"></canvas></div>
+    </div>
+  </div>
+
+  <div class="sec-head">Fraud Rate by Payment Format</div>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-eda-format"></canvas></div>
+  </div>
+
+  <div class="sec-head">EDA Charts (Notebook 02 output)</div>
+  <div class="chart-gallery" data-gallery="eda"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ FEATURE ENGINEERING ══════════════════════════ -->
+<div class="page" id="pg-features">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 03 · Feature engineering</div>
+    <div class="h1">Feature Engineering</div>
+    <div class="h1-sub">The cleaned dataset is turned into the feature set the models actually consume:
+      <b>29 features</b> for the 7-model comparison and <b>30</b> for the production XGBoost, spanning
+      time, bank, account, amount, outlier, velocity and payment-format signals.</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card c1"><div class="stat-label">Features Used by Models</div><div class="stat-val">29</div><div class="stat-sub">30 for the production XGBoost</div></div>
+    <div class="stat-card c3"><div class="stat-label">Potential Mules Detected</div><div class="stat-val">19,426</div><div class="stat-sub">fraud rate 0.252% vs 0.101% baseline</div></div>
+    <div class="stat-card c4"><div class="stat-label">Max Composite Risk Score</div><div class="stat-val">17</div><div class="stat-sub">17 stacked suspicion signals</div></div>
+    <div class="stat-card c7"><div class="stat-label">Sent-to-Mule Transactions</div><div class="stat-val">5,662</div><div class="stat-sub">fraud rate 86.5% vs 10.1% baseline</div></div>
+  </div>
+
+  <div class="sec-head">Six Feature Families</div>
+  <div class="grid3">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Velocity</div>
+      <div class="card-sub" style="line-height:1.7">Transactions per sender per hour/day, unique receivers per day. Fraud accounts average 1,364 txns/day vs 953 for normal — launderers move fast.</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Amount ratio</div>
+      <div class="card-sub" style="line-height:1.7">Each transaction vs. that <i>specific</i> account's own mean/median/z-score — personalised detection instead of one global threshold.</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Structuring</div>
+      <div class="card-sub" style="line-height:1.7">Round-number flags and just-below-reporting-threshold detection — catches "smurfing" (splitting large amounts to dodge reporting limits).</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Network</div>
+      <div class="card-sub" style="line-height:1.7">Unique senders-to-receiver / receivers-from-sender, first-time-transfer flag. Fraud receivers get money from 6.5 unique senders vs 3.8 for normal.</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Time pattern</div>
+      <div class="card-sub" style="line-height:1.7">Night / early-morning flags, deviation from an account's usual hour. Counter-intuitively fraud is <i>less</i> nocturnal than normal traffic here (20.7% vs 35.3%).</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">Mule detection</div>
+      <div class="card-sub" style="line-height:1.7">Fan-in/fan-out ratio, composite mule score (0–4). Accounts scoring 4/4 hit a 50% fraud rate — the single strongest engineered signal in the dataset.</div>
+    </div>
+  </div>
+
+  <div class="sec-head">Composite Risk Score vs Fraud Rate</div>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-feat-risk"></canvas></div>
+    <div class="callout" style="margin:14px 0 0">Score is a simple sum of 17 binary suspicion flags (outliers, velocity,
+      structuring, network, mule signals). Fraud rate rises from 0.05% at score 0 to 0.32% at score 9 — noisy
+      but directionally real, which is why it becomes one leg of the final ensemble in the Risk Scoring Engine.</div>
+  </div>
+
+  <div class="sec-head">Mule &amp; Fan-Pattern Detection</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Fraud Rate by Mule Score</div><div class="card-sub">0 = no mule signals · 4 = all 4 present</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-feat-mule"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Fan-In / Fan-Out Ratio</div><div class="card-sub">fraud vs normal accounts</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-feat-fan"></canvas></div>
+    </div>
+  </div>
+
+  <div class="sec-head">The Exact Feature Set the Models Use</div>
+  <div class="card">
+    <div class="card-title" style="margin-bottom:4px">29 features — the 7-model comparison (Notebook 05)</div>
+    <div class="card-sub" style="margin-bottom:12px">read directly from <span class="mono">models/best_ml_model.pkl</span></div>
+    <div class="feature-tag">Hour</div><div class="feature-tag">Day</div><div class="feature-tag">DayOfWeek</div><div class="feature-tag">IsWeekend</div><div class="feature-tag">Sender Bank ID</div><div class="feature-tag">Receiver Bank ID</div><div class="feature-tag">Sender_Account_Encoded</div><div class="feature-tag">Receiver_Account_Encoded</div><div class="feature-tag">is_cross_bank</div><div class="feature-tag">is_self_transfer</div><div class="feature-tag">is_currency_mismatch</div><div class="feature-tag">is_outlier</div><div class="feature-tag">outlier_score</div><div class="feature-tag">is_amount_outlier_iqr</div><div class="feature-tag">is_amount_outlier_zscore</div><div class="feature-tag">is_account_level_outlier</div><div class="feature-tag">is_high_velocity</div><div class="feature-tag">txn_count_per_sender_hour</div><div class="feature-tag">txn_count_per_sender_day</div><div class="feature-tag">amount_vs_account_median</div><div class="feature-tag">Payment_Currency_Encoded</div><div class="feature-tag">Receiving_Currency_Encoded</div><div class="feature-tag">fmt_ACH</div><div class="feature-tag">fmt_Bitcoin</div><div class="feature-tag">fmt_Cash</div><div class="feature-tag">fmt_Cheque</div><div class="feature-tag">fmt_Credit Card</div><div class="feature-tag">fmt_Reinvestment</div><div class="feature-tag">fmt_Wire</div>
+    <div class="card-title" style="margin:18px 0 4px">30 features — the production XGBoost</div>
+    <div class="card-sub" style="margin-bottom:12px">used by SHAP, the Risk Scoring Engine and the Live Prediction console
+      (<span class="mono">models/xgboost_model.pkl</span>). Same set, but the two account-ID encodings are
+      swapped for three log-scaled amount features:</div>
+    <div class="feature-tag">Amount_Paid_Log</div><div class="feature-tag">Amount_Received_Log</div><div class="feature-tag">Amount_Diff_Log</div>
+    <div class="callout" style="margin:18px 0 0"><b>Why two counts?</b> The 7 comparison models were trained on
+      the 29-feature set that keeps the encoded account IDs. The production model that scores live transactions
+      was trained on a 30-feature variant that drops those two ID columns — an account ID is an arbitrary label,
+      not a real risk signal — and adds <span class="mono">Amount_Paid_Log</span>,
+      <span class="mono">Amount_Received_Log</span> and <span class="mono">Amount_Diff_Log</span> instead.
+      Both counts are read straight from the saved model files, so this panel can never drift from what was
+      actually trained.</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════ PREPROCESSING ══════════════════════════ -->
+<div class="page" id="pg-preprocessing">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 04 · Data preprocessing</div>
+    <div class="h1">Preprocessing</div>
+    <div class="h1-sub">Log-transform the skew away, drop noise features, split before touching test
+      data, scale with outlier-robust statistics, then rebalance with SMOTE — in that exact order to
+      avoid data leakage.</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card c1"><div class="stat-label">Features Kept</div><div class="stat-val">25</div><div class="stat-sub">6 dropped — correlation &lt; 0.001</div></div>
+    <div class="stat-card c3"><div class="stat-label">Train / Test Split</div><div class="stat-val">80 / 20</div><div class="stat-sub">stratified — fraud ratio preserved exactly</div></div>
+    <div class="stat-card c4"><div class="stat-label">Scaler</div><div class="stat-val" style="font-size:16px">RobustScaler</div><div class="stat-sub">median &amp; IQR — resists extreme outliers</div></div>
+    <div class="stat-card c8"><div class="stat-label">SMOTE Result</div><div class="stat-val">979:1 → 3.33:1</div><div class="stat-sub">30% oversampling strategy</div></div>
+  </div>
+
+  <div class="sec-head">Pipeline Steps</div>
+  <div class="card">
+    <div class="step-list">
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Log-transform skewed amounts</b><p>Amount Paid / Received → log1p. Raw max was $1.05 trillion against a $1,415 median — log compresses that gap for every model downstream.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Drop low-signal features</b><p>6 features with |correlation| &lt; 0.001 removed: is_amount_outlier_zscore, is_high_velocity, Payment/Receiving_Currency_Encoded, Sender Bank ID, amount_vs_account_median. 31 → 25 features.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>Stratified 80/20 train/test split</b><p>4,062,668 train rows (4,142 fraud) / 1,015,668 test rows (1,035 fraud) — <span class="mono">stratify=y</span> guarantees both sets keep the 0.102% fraud ratio.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>RobustScaler — fit on train only</b><p>Uses median/IQR instead of mean/std, so the $1.05T outlier transaction can't distort the scale. Fit exclusively on training data to prevent leakage; test data is only <span class="mono">.transform()</span>'d.</p></div></div>
+      <div class="step-item"><div class="step-num"></div><div class="step-body"><b>SMOTE on training data only</b><p>Plain SMOTE (not SMOTETomek — too slow at 5M rows) with <span class="mono">sampling_strategy=0.3</span>: fraud rises from 4,142 to 1,217,557 synthetic + real rows, a 979:1 → 3.33:1 ratio. Test set stays 100% real and untouched.</p></div></div>
+    </div>
+  </div>
+
+  <div class="sec-head">Class Balance — Before vs After SMOTE</div>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-prep-smote"></canvas></div>
+  </div>
+
+  <div class="sec-head">Top Features by F-Score (post-SMOTE)</div>
+  <div class="card">
+    <div class="table-scroll"><table>
+      <thead><tr><th class="name">Feature</th><th>F-Score</th></tr></thead>
+      <tbody id="prep-fscore-body">
+        <tr><td class="name">fmt_ACH</td><td class="mono">4,905,425</td></tr>
+        <tr><td class="name">fmt_Cheque</td><td class="mono">461,632</td></tr>
+        <tr><td class="name">fmt_Credit Card</td><td class="mono">291,067</td></tr>
+        <tr><td class="name">Day</td><td class="mono">283,484</td></tr>
+        <tr><td class="name">Amount_Paid_Log</td><td class="mono">248,730</td></tr>
+        <tr><td class="name">Amount_Received_Log</td><td class="mono">245,444</td></tr>
+        <tr><td class="name">IsWeekend</td><td class="mono">204,595</td></tr>
+        <tr><td class="name">is_self_transfer</td><td class="mono">156,734</td></tr>
+        <tr><td class="name">is_cross_bank</td><td class="mono">153,259</td></tr>
+        <tr><td class="name">fmt_Reinvestment</td><td class="mono">127,650</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════ ML MODEL COMPARISON ══════════════════════════ -->
+<div class="page" id="pg-mlmodels">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 05 · ML models and their comparison</div>
+    <div class="h1">ML Model Comparison</div>
+    <div class="h1-sub">Seven models, one held-out test set, one honest scoreboard — Logistic
+      Regression through XGBoost, LightGBM and Hist Gradient Boosting, each trained on the same
+      29-feature SMOTE-balanced data and evaluated on the same untouched 1,015,668-row test set.</div>
+  </div>
+
+  <div class="stat-grid" id="ml-stat-grid">
+    <div class="stat-card win"><div class="stat-label">Best AUC-ROC</div><div class="stat-val" style="font-size:16px">XGBoost</div><div class="stat-sub">0.9709</div></div>
+    <div class="stat-card c3"><div class="stat-label">Best AUC-PR</div><div class="stat-val" style="font-size:16px">XGBoost</div><div class="stat-sub">0.2379</div></div>
+    <div class="stat-card c1"><div class="stat-label">Best Recall</div><div class="stat-val" style="font-size:16px">Logistic Regr.</div><div class="stat-sub">0.9372 (970/1035 caught)</div></div>
+    <div class="stat-card c4"><div class="stat-label">Fastest Train</div><div class="stat-val" style="font-size:16px">Hist GB</div><div class="stat-sub">1.2s vs 1,092s for Logistic Regr.</div></div>
+  </div>
+
+  <div class="callout">Recall and precision trade off hard here: Logistic Regression catches 93.7% of
+    fraud but drowns analysts in 158,508 false alarms; XGBoost catches only 51.1% but with 15× fewer
+    false alarms (10,417) and the best overall AUC-ROC/AUC-PR — which is why it's the model deployed
+    in the Risk Scoring Engine.</div>
+
+  <div class="sec-head">Explore Each Model</div>
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Select a model</div><div class="card-sub">all 7 trained models — metrics from results/ml_comparison_results.csv, hyper-parameters read from the saved .pkl</div></div></div>
+    <div class="model-picker" id="ml-picker"></div>
+    <div id="ml-detail" style="margin-top:18px"><div class="empty-note">Loading models…</div></div>
+  </div>
+
+  <div class="sec-head">Full Leaderboard</div>
+  <div class="card">
+    <div class="table-scroll">
+      <table id="ml-table">
+        <thead><tr>
+          <th class="name">Model</th><th>AUC-ROC</th><th>AUC-PR</th><th>Recall</th><th>Precision</th>
+          <th>F1</th><th>MCC</th><th>Fraud Caught</th><th>Missed</th><th>False Alarms</th><th>Train (s)</th>
+        </tr></thead>
+        <tbody id="ml-table-body">
+          <tr><td colspan="11" class="empty-note">Loading model comparison…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">AUC-ROC by Model</div><div class="card-sub">held-out test set · 1,015,668 rows</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-ml-auc"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Recall vs Precision</div><div class="card-sub">the fraud-catch / false-alarm trade-off</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-ml-recall-prec"></canvas></div>
+    </div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="mlmodels"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ CNN DEEP LEARNING ══════════════════════════ -->
+<div class="page" id="pg-cnn">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 06 · CNN deep learning</div>
+    <div class="h1">CNN-1D Deep Learning</div>
+    <div class="h1-sub">A multi-scale 1D convolutional network reading each account's last 15
+      transactions as a signal — three parallel filter branches (kernel sizes 3, 5, 7) hunting for
+      burst patterns at different time scales.</div>
+  </div>
+
+  <div class="stat-grid" id="cnn-stat-grid">
+    <div class="stat-card c8"><div class="stat-label">AUC-ROC</div><div class="stat-val">0.5172</div><div class="stat-sub">near-random — see honest finding below</div></div>
+    <div class="stat-card c4"><div class="stat-label">Recall</div><div class="stat-val">0.58%</div><div class="stat-sub">1 / 171 fraud sequences caught</div></div>
+    <div class="stat-card c1"><div class="stat-label">Sequences Built</div><div class="stat-val">710,679</div><div class="stat-sub">length 15, 22 features/step</div></div>
+    <div class="stat-card c3"><div class="stat-label">Parameters</div><div class="stat-val">119,169</div><div class="stat-sub">3 conv branches → FC 192→128→64→32→1</div></div>
+  </div>
+
+  <div class="callout" id="cnn-verdict"><b>Loading model verdict…</b></div>
+
+  <div class="callout warn-box"><b>Bugs found and fixed in this notebook.</b>
+    Four defects were corrected after this run, so these numbers will change once the
+    notebook is re-run:
+    <b>(1)</b> the feature list used column names that don't exist, so a silent
+    "keep only existing columns" filter dropped <i>every amount feature</i> — the CNN was
+    trained blind to transaction value;
+    <b>(2)</b> <span class="mono">nn.BCELoss()</span> takes no
+    <span class="mono">pos_weight</span>, so the 828:1 class weight was computed, printed
+    and silently discarded;
+    <b>(3)</b> the scaler was fitted on the full dataset and sequences were split randomly,
+    leaking overlapping windows between train and test;
+    <b>(4)</b> the saved score file paired test-set scores with the wrong accounts and
+    zero-padded ~80% of rows.</div>
+
+  <div class="sec-head">Architecture</div>
+  <div class="card">
+    <div class="grid2">
+      <div>
+        <div class="card-title" style="margin-bottom:10px">Why 3 parallel branches?</div>
+        <ul class="finding-list">
+          <li>Branch k=3 — detects 3-transaction burst patterns</li>
+          <li>Branch k=5 — detects 5-transaction medium patterns</li>
+          <li>Branch k=7 — detects 7-transaction longer patterns</li>
+          <li>All three checked simultaneously, concatenated to 192 features, then a 4-layer classifier head</li>
+        </ul>
+      </div>
+      <div>
+        <div class="card-title" style="margin-bottom:10px">Training setup</div>
+        <ul class="finding-list">
+          <li id="cnn-arch-input">Input: <span class="mono">(batch, — features, — transactions)</span></li>
+          <li id="cnn-arch-loss"><span class="mono">BCEWithLogitsLoss(pos_weight=827.78)</span> — now actually applied</li>
+          <li>Optimizer: Adam (lr=0.001) + CosineAnnealingLR</li>
+          <li id="cnn-arch-train">5 epochs · split by account (no window overlap)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-head">Score Distribution (all 710,679 scored accounts)</div>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-cnn-dist"></canvas></div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="cnn"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ LSTM DEEP LEARNING ══════════════════════════ -->
+<div class="page" id="pg-lstm">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 07 · LSTM deep learning model</div>
+    <div class="h1">LSTM Deep Learning</div>
+    <div class="h1-sub">A 2-layer bidirectional-style LSTM with attention, reading sequences of 10
+      transactions per account to learn temporal patterns invisible to row-independent models like
+      XGBoost.</div>
+  </div>
+
+  <div class="stat-grid" id="lstm-stat-grid">
+    <div class="stat-card c8"><div class="stat-label">AUC-ROC</div><div class="stat-val" id="lstm-auc">0.5099</div><div class="stat-sub">near-random — training did not converge</div></div>
+    <div class="stat-card c4"><div class="stat-label">Recall</div><div class="stat-val" id="lstm-recall">100%</div><div class="stat-sub" id="lstm-recall-sub">model collapsed to predicting fraud on every row</div></div>
+    <div class="stat-card c1"><div class="stat-label">Precision</div><div class="stat-val" id="lstm-precision">0.13%</div><div class="stat-sub">132,290 false alarms out of 132,464 sequences</div></div>
+    <div class="stat-card c3"><div class="stat-label">Sequences Built</div><div class="stat-val">662,319</div><div class="stat-sub">length 10, 30 features/step</div></div>
+  </div>
+
+  <div class="callout" id="lstm-verdict"><b>Loading model verdict…</b></div>
+
+  <div class="callout warn-box"><b>The root cause was a double sigmoid — now fixed.</b>
+    <span class="mono">forward()</span> ended in
+    <span class="mono">self.sigmoid(self.fc2(out))</span> while the loss was
+    <span class="mono">nn.BCEWithLogitsLoss</span>, which applies a sigmoid of its own.
+    Sigmoiding twice squashed every output into (0.5, 0.731), leaving a near-flat loss
+    surface — which is why training loss sat at ~119 every epoch and every sequence scored
+    exactly <span class="mono">0.731059</span>, the value of
+    <span class="mono">sigmoid(1.0)</span>. The model now returns raw logits. A duplicated
+    <span class="mono">fit_transform</span> that scaled the data twice, and a random split
+    that leaked overlapping windows, were fixed at the same time. Re-run the notebook to
+    replace the figures above.</div>
+
+  <div class="sec-head">Architecture</div>
+  <div class="card">
+    <div class="grid2">
+      <div>
+        <div class="card-title" style="margin-bottom:10px">Model</div>
+        <ul class="finding-list">
+          <li><span class="mono">LSTM(30 → 128)</span> — short-term pattern layer</li>
+          <li><span class="mono">LSTM(128 → 64)</span> — long-term pattern layer</li>
+          <li>BatchNorm → Attention(64→1) → FC(64→32) → FC(32→1) → <b>raw logit</b></li>
+          <li>133,890 total parameters</li>
+        </ul>
+      </div>
+      <div>
+        <div class="card-title" style="margin-bottom:10px">Training setup</div>
+        <ul class="finding-list">
+          <li id="lstm-arch-seq">Sequence length — · — features per step</li>
+          <li><span class="mono">BCEWithLogitsLoss(pos_weight=759.19)</span> on raw logits</li>
+          <li>Adam (lr=0.001) + ReduceLROnPlateau</li>
+          <li id="lstm-arch-epochs">5 epochs · check the loss curve after the fix</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-head">Confusion Matrix (live-computed from saved predictions)</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">LSTM vs XGBoost</div><div class="card-sub">same AUC-ROC axis, both from saved test predictions</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-lstm-vs-xgb"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Confusion Matrix</div><div class="card-sub">132,464 test sequences · 174 actual fraud</div></div></div>
+      <div class="table-scroll"><table class="cm-table">
+        <thead><tr><th></th><th>Predicted Normal</th><th>Predicted Fraud</th></tr></thead>
+        <tbody>
+          <tr><th class="cm-rowhead">Actual Normal</th>
+              <td class="cm-cell cm-tn" id="cm-tn">—</td>
+              <td class="cm-cell cm-fp" id="cm-fp">—</td></tr>
+          <tr><th class="cm-rowhead">Actual Fraud</th>
+              <td class="cm-cell cm-fn" id="cm-fn">—</td>
+              <td class="cm-cell cm-tp" id="cm-tp">—</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout critical-box" style="margin:14px 0 0">Every one of the 132,464 test sequences
+        was predicted fraud — the entire "Predicted Normal" column is zero. That is what a collapsed
+        model looks like in a confusion matrix.</div>
+    </div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="lstm"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ GRAPH NETWORK ANALYSIS ══════════════════════════ -->
+<div class="page" id="pg-graph">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 08 · Graph network analysis</div>
+    <div class="h1">Graph Network Analysis</div>
+    <div class="h1-sub">Every account becomes a node, every transaction a directed edge — 23 structural
+      features (PageRank, fan-in/out, cycles, communities, betweenness) surface laundering patterns
+      that are invisible one row at a time.</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card c1"><div class="stat-label">Graph Nodes</div><div class="stat-val">515,080</div><div class="stat-sub">accounts</div></div>
+    <div class="stat-card c3"><div class="stat-label">Graph Edges</div><div class="stat-val">1,015,736</div><div class="stat-sub">transactions · density 0.0000038</div></div>
+    <div class="stat-card c8"><div class="stat-label">Circular Flows Found</div><div class="stat-val">812</div><div class="stat-sub">A→B→C→…→A layering patterns</div></div>
+    <div class="stat-card c4"><div class="stat-label">Communities Detected</div><div class="stat-val">3,351</div><div class="stat-sub">largest = 171 accounts</div></div>
+    <div class="stat-card critical"><div class="stat-label">Graph-Level Mules</div><div class="stat-val">54,984</div><div class="stat-sub">score-4 accounts hit 3.64% fraud rate</div></div>
+  </div>
+
+  <div class="sec-head">Key Structural Findings</div>
+  <div class="card">
+    <ul class="finding-list">
+      <li><b>Degree asymmetry is the strongest single graph signal</b> — fraud accounts average an
+        in-degree of 6.54 vs 3.83 for normal, and total degree 1,005.5 vs 704.3.</li>
+      <li><b>Circular flows carry 4.8× the fraud rate</b> — 0.485% fraud in the 40,402 transactions
+        touching a detected cycle, vs 0.102% overall. 519 of the 812 cycles are simple 2-hop loops.</li>
+      <li><b>Suspicious communities run 14× hotter</b> — the 62,212 transactions inside flagged
+        communities show a 1.41% fraud rate against the dataset baseline of 0.102%.</li>
+      <li><b>Graph mule score is highly predictive at the extreme</b> — accounts flagged by all 4 graph
+        mule criteria (score 4) hit a 3.64% fraud rate, 36× the baseline, though only 165 accounts reach
+        that score.</li>
+      <li><b>Fan patterns split cleanly</b> — "Collector" (fan-in) accounts run 0.168% fraud, "Mule"
+        (both fan-in and fan-out) accounts run 0.196%, both above the 0.100% "Normal" pattern baseline.</li>
+    </ul>
+  </div>
+
+  <div class="sec-head">Fraud Rate by Graph Mule Score</div>
+  <div class="card">
+    <div class="chart-wrap"><canvas id="chart-graph-mule"></canvas></div>
+  </div>
+
+  <div class="sec-head">Top Transaction Communities</div>
+  <div class="card">
+    <div class="table-scroll"><table>
+      <thead><tr><th>Community ID</th><th>Transactions</th><th>Fraud Rate</th><th>Flagged Suspicious</th></tr></thead>
+      <tbody id="graph-comm-body"><tr><td colspan="4" class="empty-note">Loading community data…</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="graph"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ SHAP EXPLAINABILITY ══════════════════════════ -->
+<div class="page" id="pg-shap">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 09 · SHAP explainability</div>
+    <div class="h1">SHAP Explainability</div>
+    <div class="h1-sub">Exact SHAP TreeExplainer values (not an approximation) on the production
+      XGBoost model — every fraud call can be traced back to the specific features that pushed it over
+      the line, feeding the auto-generated SAR narratives in the Live Prediction console.</div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card win"><div class="stat-label">Model Explained</div><div class="stat-val" style="font-size:16px">XGBoost</div><div class="stat-sub">AUC-ROC 0.9732 on SHAP sample</div></div>
+    <div class="stat-card c1"><div class="stat-label">Sample Size</div><div class="stat-val">2,000</div><div class="stat-sub">all 1,035 fraud + 965 normal</div></div>
+    <div class="stat-card c4"><div class="stat-label">Base Value</div><div class="stat-val">0.0091</div><div class="stat-sub">expected fraud probability with no signal</div></div>
+    <div class="stat-card c7"><div class="stat-label">Top Signal</div><div class="stat-val" style="font-size:16px">fmt_ACH</div><div class="stat-sub">mean |SHAP| = 1.919</div></div>
+  </div>
+
+  <div class="sec-head">Global Feature Importance (live from shap_feature_importance.csv)</div>
+  <div class="card">
+    <div class="chart-wrap tall"><canvas id="chart-shap-importance"></canvas></div>
+  </div>
+
+  <div class="sec-head">How to Read SHAP Values</div>
+  <div class="grid2">
+    <div class="card">
+      <table>
+        <tbody>
+          <tr><td class="name">Positive SHAP</td><td style="color:var(--critical)">Pushes the transaction toward FRAUD</td></tr>
+          <tr><td class="name">Negative SHAP</td><td style="color:var(--good)">Pushes the transaction toward NORMAL</td></tr>
+          <tr><td class="name">Magnitude</td><td>How much that one feature moved the final probability</td></tr>
+          <tr><td class="name">Base value</td><td>Where the model starts before seeing any features (0.0091)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:8px">From SHAP to SAR</div>
+      <div class="card-sub" style="line-height:1.7">Every alert on the Live Prediction &amp; Alerts tab
+        runs through this exact SHAP TreeExplainer. The top 5 fraud-pushing features and top 3
+        mitigating features are pulled straight into an auto-drafted Suspicious Activity Report —
+        turning a black-box probability into a defensible, feature-by-feature written explanation ready
+        for analyst review.</div>
+    </div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="shap"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ RISK SCORING ENGINE ══════════════════════════ -->
+<div class="page" id="pg-risk">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 10 · Risk scoring engine</div>
+    <div class="h1">Risk Scoring Engine</div>
+    <div class="h1-sub">All 5.08M transactions scored by every available model, combined into a single
+      weighted ensemble, then calibrated into four alert tiers from the actual score distribution —
+      not fixed 30/50/70 thresholds.</div>
+  </div>
+
+  <div class="stat-grid" id="risk-stat-grid">
+    <div class="stat-card c1"><div class="stat-label">Transactions Scored</div><div class="stat-val">5,078,336</div><div class="stat-sub">100% coverage</div></div>
+    <div class="stat-card critical"><div class="stat-label">Alerts Generated</div><div class="stat-val" id="risk-total-alerts">129,124</div><div class="stat-sub" id="risk-alert-rate">2.54% alert rate</div></div>
+    <div class="stat-card good"><div class="stat-label">Fraud Captured</div><div class="stat-val" id="risk-captured">199 / 5,177</div><div class="stat-sub" id="risk-capture-rate">3.84% capture rate</div></div>
+    <div class="stat-card c4"><div class="stat-label">Ensemble AUC-ROC</div><div class="stat-val" id="risk-auc-ensemble">0.7039</div><div class="stat-sub" id="risk-auc-xgb">vs 0.9110 for XGBoost alone on full 5M</div></div>
+  </div>
+
+  <div class="callout critical-box" id="risk-diag-callout"><b>Diagnosis — the ensemble is losing signal, not adding it.</b>
+    <span id="risk-diag-text">Running diagnostics across all 5.08M scored transactions…</span></div>
+
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Fraud Captured at the Same Alert Budget</div>
+      <div class="card-sub">ensemble ranking vs raw XGBoost ranking · computed live from final_risk_scores.csv</div></div></div>
+    <div class="chart-wrap"><canvas id="chart-risk-diag"></canvas></div>
+    <div class="table-scroll" style="margin-top:14px"><table>
+      <thead><tr><th>Alert budget</th><th>Alerts</th><th>Ensemble catches</th><th>XGBoost alone catches</th><th>Difference</th></tr></thead>
+      <tbody id="risk-diag-body"><tr><td colspan="5" class="empty-note">Computing…</td></tr></tbody>
+    </table></div>
+    <div class="callout" style="margin:14px 0 0"><b>Why this happens.</b> The weights below are not a design
+      choice — the engine automatically redistributes weight away from any model with no full-coverage
+      scores, and at build time only XGBoost and CNN-1D had them. That handed CNN-1D 14.7% of the blend
+      despite an AUC-ROC of 0.5172 (near-random, see its tab). Mixing a random signal into a good ranking
+      shuffles it, which is why ensemble AUC-ROC (0.7039) sits far below XGBoost-alone (0.9110), and why
+      the alert queue captures so much less fraud than the same number of alerts picked by XGBoost alone.
+      <b>The fix is to rebuild the ensemble with CNN and LSTM at 0% weight</b> — the composite rule-score
+      can stay, but the blend should not include a model that cannot separate the classes.</div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Ensemble Weights</div><div class="card-sub">live from risk_engine_config.pkl</div></div></div>
+      <div class="chart-wrap short"><canvas id="chart-risk-weights"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Calibrated Thresholds</div><div class="card-sub">from the actual score distribution, not fixed cutoffs</div></div></div>
+      <table>
+        <thead><tr><th>Level</th><th>Threshold</th><th>Definition</th></tr></thead>
+        <tbody id="risk-threshold-body">
+          <tr><td><span class="pill CRITICAL">CRITICAL</span></td><td class="mono">≥ 27.00</td><td>top 0.5% of transactions</td></tr>
+          <tr><td><span class="pill HIGH">HIGH</span></td><td class="mono">≥ 23.66</td><td>top 2.5%</td></tr>
+          <tr><td><span class="pill MEDIUM">MEDIUM</span></td><td class="mono">≥ 10.13</td><td>top 10%</td></tr>
+          <tr><td><span class="pill LOW">LOW</span></td><td class="mono">everything else</td><td>90% of volume</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="sec-head">Model Admission — Which Scores Earned a Weight</div>
+  <div class="card">
+    <div class="card-head"><div><div class="card-title">Per-model gate results</div>
+      <div class="card-sub" id="risk-gate-sub">read from models/risk_engine_config.pkl</div></div></div>
+    <div class="table-scroll"><table>
+      <thead><tr><th class="name">Score</th><th>AUC-ROC</th><th>Coverage</th><th>Weight</th><th>Verdict</th></tr></thead>
+      <tbody id="risk-gate-body"><tr><td colspan="5" class="empty-note">Loading…</td></tr></tbody>
+    </table></div>
+  </div>
+
+  <div class="sec-head">Risk Level Distribution &amp; Fraud Capture</div>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Transactions by Risk Level</div><div class="card-sub">live from final_risk_scores.csv</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-risk-levels"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Fraud Rate by Risk Level</div><div class="card-sub">validates the calibration — higher tier should mean higher fraud density</div></div></div>
+      <div class="chart-wrap"><canvas id="chart-risk-fraudrate"></canvas></div>
+    </div>
+  </div>
+
+  <div class="sec-head">Cumulative Fraud Capture by Tier</div>
+  <div class="card">
+    <div class="table-scroll"><table>
+      <thead><tr><th>Risk Level</th><th>Fraud Cases</th><th>% of Total Fraud</th><th>Cumulative</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill CRITICAL">CRITICAL</span></td><td class="mono">41</td><td class="mono">0.8%</td><td class="mono">41 (0.8%)</td></tr>
+        <tr><td><span class="pill HIGH">HIGH</span></td><td class="mono">158</td><td class="mono">3.1%</td><td class="mono">199 (3.8%)</td></tr>
+        <tr><td><span class="pill MEDIUM">MEDIUM</span></td><td class="mono">1,077</td><td class="mono">20.8%</td><td class="mono">1,276 (24.6%)</td></tr>
+        <tr><td><span class="pill LOW">LOW</span></td><td class="mono">3,901</td><td class="mono">75.4%</td><td class="mono">5,177 (100.0%)</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout" style="margin:14px 0 0"><b>Reading this honestly:</b> the alert queue (HIGH +
+      CRITICAL, 2.54% of volume) surfaces only 3.84% of all fraud — most fraud transactions score LOW on
+      the current ensemble. The diagnostics above show this is <i>not</i> a limit of the data: the same
+      number of alerts ranked by XGBoost alone captures several times more fraud. The ensemble blend is
+      the bottleneck, and it is fixable by re-weighting.</div>
+  </div>
+
+  <div class="sec-head">Notebook Charts</div>
+  <div class="chart-gallery" data-gallery="risk"><div class="empty-note">Loading charts…</div></div>
+</div>
+
+
+<!-- ══════════════════════════ LIVE PREDICTION & ALERTS ══════════════════════════ -->
+<div class="page" id="pg-live">
+  <div class="page-head">
+    <div class="eyebrow">Notebook 11 · Live risk console</div>
+    <div class="h1">Live Prediction &amp; Alerts</div>
+    <div class="h1-sub">Score a transaction in real time against the production XGBoost model, see its
+      exact SHAP explanation and an auto-drafted SAR narrative — or browse the live 129,124-row alert
+      queue generated by the Risk Scoring Engine.</div>
+  </div>
+
+  <div class="grid2" style="align-items:start">
+    <!-- ── prediction form ───────────────────────────── -->
+    <div class="card">
+      <div class="card-head"><div><div class="card-title">Test a Transaction</div><div class="card-sub">production XGBoost (30 features) + SHAP TreeExplainer</div></div></div>
+
+      <div class="form-grid">
+        <div class="field"><label class="field-label">Amount Paid ($)</label><input type="number" id="p-amount-paid" value="12500" min="0"></div>
+        <div class="field"><label class="field-label">Amount Received ($)</label><input type="number" id="p-amount-received" value="12500" min="0"></div>
+        <div class="field"><label class="field-label">Payment Format</label>
+          <select id="p-format">
+            <option>ACH</option><option>Bitcoin</option><option>Cash</option><option selected>Cheque</option>
+            <option>Credit Card</option><option>Reinvestment</option><option>Wire</option>
+          </select>
+        </div>
+        <div class="field"><label class="field-label">Payment Currency</label><select id="p-pay-currency"></select></div>
+        <div class="field"><label class="field-label">Receiving Currency</label><select id="p-recv-currency"></select></div>
+        <div class="field"><label class="field-label">Hour (0–23)</label><input type="number" id="p-hour" value="12" min="0" max="23"></div>
+        <div class="field"><label class="field-label">Day of Month</label><input type="number" id="p-day" value="15" min="1" max="31"></div>
+        <div class="field"><label class="field-label">Day of Week (0=Mon)</label><input type="number" id="p-dow" value="6" min="0" max="6"></div>
+        <div class="field"><label class="field-label">Sender Bank ID</label><input type="number" id="p-sender-bank" value="10"></div>
+        <div class="field"><label class="field-label">Receiver Bank ID</label><input type="number" id="p-receiver-bank" value="99"></div>
+        <div class="field"><label class="field-label">Txns / sender / hour</label><input type="number" id="p-txn-hour" value="3" min="0"></div>
+        <div class="field"><label class="field-label">Txns / sender / day</label><input type="number" id="p-txn-day" value="20" min="0"></div>
+      </div>
+
+      <div class="form-grid" style="margin-top:2px">
+        <label class="toggle-row"><input type="checkbox" id="p-weekend" checked><span>Weekend</span></label>
+        <label class="toggle-row"><input type="checkbox" id="p-crossbank" checked><span>Cross-bank</span></label>
+        <label class="toggle-row"><input type="checkbox" id="p-self"><span>Self-transfer</span></label>
+        <label class="toggle-row"><input type="checkbox" id="p-iqr"><span>Amount outlier (IQR)</span></label>
+        <label class="toggle-row"><input type="checkbox" id="p-acclevel"><span>Outlier vs own history</span></label>
+        <label class="toggle-row"><input type="checkbox" id="p-velocity"><span>High velocity</span></label>
+      </div>
+
+      <button class="btn" id="btn-predict" style="margin-top:14px;width:100%">▶ Analyse Transaction</button>
+      <div class="loading-note" id="predict-status" style="margin-top:8px"></div>
+    </div>
+
+    <!-- ── result ─────────────────────────────────────── -->
+    <div class="card" id="predict-result-card" style="display:none">
+      <div class="card-head"><div><div class="card-title">Prediction Result</div><div class="card-sub">live SHAP-explained score</div></div></div>
+      <div class="risk-score-hero">
+        <div>
+          <div class="risk-score-num" id="pred-score">—</div>
+          <div class="stat-sub">risk percentile</div>
+        </div>
+        <div style="flex:1">
+          <span class="pill" id="pred-level">—</span>
+          <div class="stat-sub" style="margin-top:8px" id="pred-prob">fraud probability —</div>
+          <div class="stat-sub" style="margin-top:3px" id="pred-context"></div>
+        </div>
+      </div>
+      <div class="callout" style="margin:0 0 14px" id="pred-thresholds">
+        Scored against the distribution of all 5.08M transactions.
+      </div>
+      <div class="sec-head" style="margin-top:6px">Top SHAP Factors</div>
+      <div class="chart-wrap short"><canvas id="chart-pred-shap"></canvas></div>
+      <div class="sec-head">Auto-Generated SAR Narrative</div>
+      <div class="sar-box" id="pred-sar">Run a prediction to generate a Suspicious Activity Report draft.</div>
+    </div>
+    <div class="card" id="predict-placeholder-card">
+      <div class="empty-note">Fill in the transaction details and click <b>Analyse Transaction</b> to see
+        a live risk score, SHAP explanation and auto-drafted SAR narrative.</div>
+    </div>
+  </div>
+
+  <div class="sec-head">Live Alert Queue</div>
+  <div class="stat-grid" id="alerts-stat-grid">
+    <div class="stat-card critical"><div class="stat-label">Total Alerts</div><div class="stat-val" id="al-total">—</div></div>
+    <div class="stat-card good"><div class="stat-label">Confirmed Fraud in Queue</div><div class="stat-val" id="al-fraud">—</div></div>
+    <div class="stat-card c4"><div class="stat-label">Alert Rate</div><div class="stat-val" id="al-rate">2.54%</div></div>
+    <div class="stat-card c7"><div class="stat-label">Capture Rate</div><div class="stat-val" id="al-capture">3.84%</div></div>
+  </div>
+
+  <div class="card">
+    <div class="callout" id="al-composition">Loading queue composition…</div>
+
+    <div class="filter-row">
+      <select id="al-level">
+        <option value="">All levels</option>
+        <option value="CRITICAL">CRITICAL</option>
+        <option value="HIGH">HIGH</option>
+        <option value="MEDIUM" disabled>MEDIUM (never in the queue)</option>
+        <option value="LOW" disabled>LOW (never in the queue)</option>
+      </select>
+      <select id="al-order">
+        <option value="score">Highest risk first</option>
+        <option value="sample">Representative sample</option>
+      </select>
+      <input type="number" id="al-min-score" placeholder="Min risk score">
+      <button class="btn-ghost" id="btn-refresh-alerts">Apply filters</button>
+      <span class="loading-note" id="alerts-loading"></span>
+    </div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>Alert ID</th><th>Level</th><th>Risk Score</th><th>XGB Score</th><th>CNN Score</th><th>Composite</th><th>Status</th></tr></thead>
+      <tbody id="alerts-table-body"><tr><td colspan="7" class="empty-note">Loading alerts…</td></tr></tbody>
+    </table></div>
+    <div class="pager" id="alerts-pager"></div>
+  </div>
+</div>
+
+
+
+    </div>
+  </div>
+</div>
+
+<script>
+window.OVERVIEW = {{ overview | tojson }};
+</script>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>
